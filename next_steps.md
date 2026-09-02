@@ -27,7 +27,12 @@ Approved plan: `~/.claude/plans/i-want-to-build-spicy-walrus.md` (copy of the de
 | **v1.0.1 fixes (schema dialect, pre-flight range guard)** | **done, 90 tests pass, live-verified** |
 | Reinstall `dist/hbsg-searchlight-1.0.1.mcpb` in Claude Desktop | not started (Justin double-clicks it) |
 | Windows check by a teammate | not started |
+| Tag `v1.0.1` pushed to origin | done, points at `3b20969` |
 | GitHub Release v1.0.1 with the .mcpb attached | not started |
+
+`v1.0.0` was tagged and released with its .mcpb attached (0 downloads). That build cannot run
+any of the three export tools, so v1.0.1 should replace it as the latest release before
+anyone is pointed at the repo.
 
 ## v1.0.1: two bugs found in real use (2026-09-02)
 
@@ -77,7 +82,7 @@ over-window call is refused locally with no request sent. `npm run smoke` still 
    confirms `searchlight_export_events_csv` now runs, with the file landing in
    Documents/SearchLight Reports.
 2. One Windows teammate installs and repeats step 1.
-3. `git tag v1.0.1 && git push --tags`, then
+3. Tag: done. Remaining:
    `gh release create v1.0.1 dist/hbsg-searchlight-1.0.1.mcpb --title v1.0.1`.
 
 ## Ideas not built (YAGNI until asked)

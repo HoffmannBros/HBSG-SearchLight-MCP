@@ -171,17 +171,37 @@ export const BENCHMARK_DIMENSIONS = [
   "normalizedBusinessUnit",
 ] as const;
 
-/** Sections of an insight document that `fields` can select. */
-export const INSIGHT_SECTIONS = [
+/**
+ * Keys of an insight item that `fields` can select (observed on the live API
+ * 2026-09-02; the docs list a different, nested shape).
+ */
+export const INSIGHT_FIELDS = [
+  "kind",
+  "topic",
+  "category",
+  "source",
+  "title",
+  "summary",
+  "takeaway",
+  "action",
+  "evidence",
+  "priority",
+  "id",
+  "impact_value",
+  "impact_unit",
+  "impact_display",
   "account",
+  "account_key",
   "period",
   "generated_at",
+  "first_seen",
+  "change",
   "confidence",
+  "accuracy",
+  "review_required",
   "graded_calls",
-  "action_items",
-  "deep_insights",
-  "surprise_insights",
-  "main_themes",
+  "references",
+  "future_investigation",
 ] as const;
 
 const byName = new Map(STATIC_FIELDS.map((f) => [f.name, f]));

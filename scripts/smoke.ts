@@ -101,7 +101,7 @@ try {
     filename: "smoke_benchmarks",
   });
 
-  await call("searchlight_get_insights", { organization: org, max_documents: 2 });
+  await call("searchlight_get_insights", { organization: org, max_items: 3 });
   await call("searchlight_export_insights_csv", { organization: org, filename: "smoke_insights" });
 
   await call("searchlight_api_call", { path: "/api", max_items: 5 });

@@ -35,8 +35,8 @@
     { "name": "searchlight_export_events_csv", "description": "Run an events query of any size and write it to a CSV file" },
     { "name": "searchlight_get_benchmarks", "description": "Industry benchmarks and percentile ranges for a month" },
     { "name": "searchlight_export_benchmarks_csv", "description": "Benchmarks for several months written to one CSV file" },
-    { "name": "searchlight_get_insights", "description": "SearchLight's AI-generated insight documents and action items" },
-    { "name": "searchlight_export_insights_csv", "description": "Insight action items and findings written to a CSV or JSON file" },
+    { "name": "searchlight_get_insights", "description": "SearchLight's AI-generated insights and action items" },
+    { "name": "searchlight_export_insights_csv", "description": "Insight items written to a CSV or JSON file" },
     { "name": "searchlight_api_call", "description": "Call any SearchLight API path directly" }
   ],
   "keywords": ["searchlight", "marketing", "attribution", "leads", "hoffmann", "csv"],

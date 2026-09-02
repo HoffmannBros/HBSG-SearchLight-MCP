@@ -44,7 +44,7 @@ What are SearchLight's latest action items for our accounts?
 | `searchlight_export_events_csv` | Same query written to CSV or JSONL, any size |
 | `searchlight_get_benchmarks` | Industry benchmark and p10 to p90 range for one month |
 | `searchlight_export_benchmarks_csv` | Benchmarks for many months in one file |
-| `searchlight_get_insights` | AI-generated insight documents and action items |
+| `searchlight_get_insights` | AI-generated action items and insights, with priority, impact, and evidence |
 | `searchlight_export_insights_csv` | Insight items flattened to CSV, or raw JSON |
 | `searchlight_api_call` | Any SearchLight API path directly, for anything new |
 

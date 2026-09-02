@@ -177,3 +177,11 @@ Release flow documented in README: bump version in both files, run `npm run pack
 - The hourly request limit is not published. Adaptive splitting only fans out when the API rejects a request, which keeps call counts minimal; the export result reports calls used.
 - Windows Documents folders can be OneDrive-redirected; the output folder is user-configurable and reported in every export result.
 - Node 24 is what Claude Desktop 1.40609.1 bundles (Electron 42); esbuild targets node20 so older Desktop builds still work.
+
+## Post-implementation note (2026-09-02 live smoke)
+
+The insights endpoint returns a flat array of items (`kind`: `action_item` or `insight`, with
+title, summary, takeaway, action, priority, confidence, impact_*, evidence, references, account,
+account_key, period, generated_at), not the per-account document wrapper the docs describe.
+`fields` selects item keys. The flattener handles both shapes. See `next_steps.md` for the
+full smoke results.

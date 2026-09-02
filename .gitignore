@@ -1,0 +1,16 @@
+# Secrets. Never commit.
+.env
+.env.*
+!.env.example
+
+# Build and pack output
+server/
+dist/
+node_modules/
+
+# Local exports written during smoke tests
+smoke-output/
+
+# OS and editor noise
+.DS_Store
+.claude/

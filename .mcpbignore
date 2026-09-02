@@ -1,0 +1,23 @@
+# Secrets must never be packed into the bundle.
+.env
+.env.*
+
+# Source and dev-only files. The bundle ships only the esbuild output.
+src/
+tests/
+scripts/
+docs/
+node_modules/
+tsconfig.json
+vitest.config.ts
+next_steps.md
+CLAUDE.md
+.claude/
+.git/
+.gitignore
+smoke-output/
+
+# Pack output, so re-packs don't nest bundles.
+dist/
+*.mcpb
+.DS_Store

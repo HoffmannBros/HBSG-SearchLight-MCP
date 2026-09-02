@@ -10,7 +10,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=server/index.cjs --log-level=warning",
-    "test": "vitest run",
+    "test": "npm run build && vitest run",
     "test:watch": "vitest",
     "smoke": "tsx scripts/smoke.ts",
     "inspect": "npm run build && npx @modelcontextprotocol/inspector node server/index.cjs",

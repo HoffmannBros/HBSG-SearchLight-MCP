@@ -3,8 +3,8 @@
  * calendar days so DST never shifts a boundary.
  */
 
-export type Interval = "total" | "month" | "week" | "day";
-export const INTERVALS: readonly Interval[] = ["total", "month", "week", "day"];
+export const INTERVALS = ["total", "month", "week", "day"] as const;
+export type Interval = (typeof INTERVALS)[number];
 
 /** The attribution window; a single interval may not exceed this many days. */
 export const MAX_INTERVAL_DAYS = 90;

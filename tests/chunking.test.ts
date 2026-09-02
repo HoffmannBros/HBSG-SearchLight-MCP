@@ -73,7 +73,7 @@ describe("fetchEventsChunked", () => {
     const rows: Row[] = [];
     const stats = await fetchEventsChunked(
       c,
-      { organization: "acme", fields: ["spend"], start: "2026-01-01", end: "2026-06-30", interval: "month" },
+      { organization: "acme", fields: ["account", "spend"], start: "2026-01-01", end: "2026-06-30", interval: "month" },
       async (r) => {
         rows.push(...r);
       },
@@ -98,13 +98,38 @@ describe("fetchEventsChunked", () => {
     const rows: Row[] = [];
     const stats = await fetchEventsChunked(
       client(fetchImpl),
-      { organization: "acme", fields: ["spend"], start: "2026-01-01", end: "2026-01-31", interval: "total", accounts: ["a1", "a3"] },
+      { organization: "acme", fields: ["account", "spend"], start: "2026-01-01", end: "2026-01-31", interval: "total", accounts: ["a1", "a3"] },
       async (r) => {
         rows.push(...r);
       },
     );
     expect(stats).toEqual({ chunks: 2, splits: 1 });
     expect(rows.map((r) => r.account).sort()).toEqual(["a1", "a3"]);
+  });
+
+  it("splits only by date when the account dimension is not requested", async () => {
+    const seen: string[] = [];
+    const fetchImpl = (async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      seen.push(url.search);
+      if (url.pathname === "/api") return new Response(JSON.stringify(access), { status: 200 });
+      const p = url.searchParams;
+      if (p.get("account") || p.get("accounts")) throw new Error("must not fan out by account");
+      const days = (Date.parse(p.get("end")!) - Date.parse(p.get("start")!)) / 86_400_000 + 1;
+      if (days > 100) return tooBig();
+      return new Response(JSON.stringify([{ start: p.get("start"), end: p.get("end"), spend: days }]), { status: 200 });
+    }) as unknown as typeof fetch;
+    const rows: Row[] = [];
+    const stats = await fetchEventsChunked(
+      client(fetchImpl),
+      { organization: "acme", fields: ["spend"], start: "2026-01-01", end: "2026-06-30", interval: "month" },
+      async (r) => {
+        rows.push(...r);
+      },
+    );
+    expect(stats).toEqual({ chunks: 2, splits: 1 });
+    expect(rows.reduce((s, r) => s + (r.spend as number), 0)).toBe(181);
+    expect(seen.filter((s) => s === "")).toHaveLength(0);
   });
 
   it("rethrows when a single-interval, single-account request is still rejected", async () => {

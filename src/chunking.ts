@@ -58,22 +58,34 @@ export function makeSplitter(
   client: SearchLightClient,
   organization: string,
   interval: Interval,
+  opts: { allowAccountSplit: boolean },
 ): (task: ChunkTask) => Promise<ChunkTask[] | null> {
   return async (task) => {
     let accounts = task.accounts;
-    if (accounts === undefined) {
-      const all = await client.listAccounts(organization);
-      if (all.length > 1) {
-        return all.map((a) => ({ accounts: [a], window: task.window }));
+    if (opts.allowAccountSplit) {
+      if (accounts === undefined) {
+        const all = await client.listAccounts(organization);
+        if (all.length > 1) {
+          return all.map((a) => ({ accounts: [a], window: task.window }));
+        }
+        accounts = all.length === 1 ? all : undefined;
+      } else if (accounts.length > 1) {
+        return accounts.map((a) => ({ accounts: [a], window: task.window }));
       }
-      accounts = all.length === 1 ? all : undefined;
-    } else if (accounts.length > 1) {
-      return accounts.map((a) => ({ accounts: [a], window: task.window }));
     }
     const halves = halveWindow(task.window, interval);
     if (!halves) return null;
     return halves.map((window) => ({ accounts, window }));
   };
+}
+
+/**
+ * Fanning out by account only preserves the result's meaning when rows are
+ * already broken out by account; otherwise the API's cross-account
+ * aggregation would silently become per-account rows.
+ */
+export function canSplitByAccount(fields: string[]): boolean {
+  return fields.includes("account") || fields.includes("accountKey");
 }
 
 export interface EventsQuery {
@@ -112,7 +124,43 @@ export async function fetchEventsChunked(
     {
       run: (task) => client.get<Row[]>(path, eventsParams(q, task)),
       emit: onRows,
-      split: makeSplitter(client, q.organization, q.interval),
+      split: makeSplitter(client, q.organization, q.interval, { allowAccountSplit: canSplitByAccount(q.fields) }),
+    },
+  );
+}
+
+export interface InsightsQuery {
+  organization: string;
+  accounts?: string[] | undefined;
+  start?: string | undefined;
+  end?: string | undefined;
+  fields?: string[] | undefined;
+}
+
+/** Fetch insight documents, splitting by account and then by publication date on the 200-document limit. */
+export async function fetchInsightsChunked<T = Row>(
+  client: SearchLightClient,
+  q: InsightsQuery,
+  onDocs: (docs: T[], task: ChunkTask) => Promise<void>,
+): Promise<ChunkStats> {
+  const path = `/api/${encodeURIComponent(q.organization)}/insights`;
+  const dated = q.start !== undefined && q.end !== undefined;
+  const splitter = makeSplitter(client, q.organization, dated ? "day" : "total", { allowAccountSplit: true });
+  return adaptiveFetch<T[]>(
+    { accounts: q.accounts, window: { start: q.start ?? "", end: q.end ?? "" } },
+    {
+      run: (task) => {
+        const accounts = task.accounts ?? q.accounts;
+        return client.get<T[]>(path, {
+          account: accounts && accounts.length === 1 ? accounts[0] : undefined,
+          accounts: accounts && accounts.length > 1 ? accounts.join(",") : undefined,
+          start: dated ? task.window.start : undefined,
+          end: dated ? task.window.end : undefined,
+          fields: q.fields && q.fields.length > 0 ? q.fields.join(",") : undefined,
+        });
+      },
+      emit: onDocs,
+      split: splitter,
     },
   );
 }

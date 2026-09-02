@@ -52,7 +52,7 @@ export class SearchLightApiError extends Error {
     if (this.status === 504) return true;
     if (this.status !== 400) return false;
     if (/90-day/i.test(this.apiMessage)) return false;
-    return /too many|too much|reduce|rows|limit/i.test(this.apiMessage);
+    return /too many|too much|reduce|narrow|rows|documents|limit/i.test(this.apiMessage);
   }
 
   /** True when the range exceeded the 90-day window with interval=total. */

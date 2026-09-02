@@ -11,6 +11,11 @@ node_modules/
 # Local exports written during smoke tests
 smoke-output/
 
+# Reference exports. These carry live customer records (names, emails, phones).
+# Keep them local; scrubbed fixtures live in the sibling conversions repo.
+searchlight_*.csv
+reference/
+
 # OS and editor noise
 .DS_Store
 .claude/

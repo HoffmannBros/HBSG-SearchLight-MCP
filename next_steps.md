@@ -105,3 +105,42 @@ over-window call is refused locally with no request sent. `npm run smoke` still 
 - The API's own wording confirms the boundary: a 2026-06-01 to 2026-08-30 events request
   returns 400 "Requested range spans 91 days, exceeding the 90-day attribution window", so
   90 days inclusive is allowed and `MAX_INTERVAL_DAYS = 90` is right.
+
+## Customer-level attribution detail (verified 2026-09-02)
+
+There is no dedicated customer/lead endpoint. `/api/<org>/events` is the row-level source:
+request `opportunityId` (the per-customer ID) plus `attributionDetail` and the grain collapses
+to one row per event per customer.
+
+`attributionDetail` is a newline-delimited text blob, not structured JSON. Verified contents on
+a live St. Louis sample: `gclid`, `gbraid`, `gad_campaignid`, `utm_source/medium/campaign/
+content/term`, `sts`/`stm`/`stc`/`stad`, `keyword`, `adGroup`, `campaignId`, `referrer`,
+`referrerUrl`, `trackingNumber`, `campaignPhoneNumbers.0`, `category.name`, `medium`. Sections
+are separated by `[from <resolver>]...` markers (`campaignMetrics`, `derived`, `location`,
+`session`, `referrer`, `service-titan`, `service-titan-campaign`). Any parsing of gclid or utm
+values has to be done client-side on that blob.
+
+The `detail` dimension ("unstructured information about a lead from the source system") came
+back absent on every row of that sample; do not rely on it.
+
+`revenuePotential` is already deduplicated per customer per time period (last funnel step wins),
+so grouping by `opportunityId` gives a correct per-customer number. Do not sum it across
+overlapping groupings.
+
+Volume: one account, one day, grouped by opportunityId/attributionDetail/campaign/sourceId
+returned 1,974 rows in a single API call. Use `searchlight_export_events_csv` for anything
+wider than a couple of days, and remember the 90-day attribution window.
+
+## Spun out: Google Ads conversion export (2026-09-02)
+
+Feeding SearchLight revenue to Google Ads as offline conversions is deliberately NOT part of
+this extension. It lives in the sibling repo `../HBSG_SearchLight_Conversions`, design spec at
+`docs/superpowers/specs/2026-09-02-searchlight-google-conversions-design.md`.
+
+Reason: MCP tools exist so a model can choose arguments, and that job writes the signal the ad
+account bids on, where the only remedy for a bad upload is filing retractions. It needs a
+command with a config file and a dry run, not a tool call. Bundling would also force a new
+.mcpb version and a teammate reinstall for every change to its value model.
+
+Nothing in this repo changes as a result. The sibling repo carries its own thin SearchLight
+client, with the 90-day preflight ported across on purpose.

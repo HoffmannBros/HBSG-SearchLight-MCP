@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   DateError,
   daysInclusive,
+  eventsRangeViolation,
   halveWindow,
+  isEventsPath,
   intervalBoundaries,
   monthRange,
   parseIsoDate,
@@ -83,5 +85,47 @@ describe("monthRange", () => {
   it("rejects bad input", () => {
     expect(() => monthRange("2026-1", "2026-02")).toThrow(DateError);
     expect(() => monthRange("2026-03", "2026-02")).toThrow(DateError);
+  });
+});
+
+describe("eventsRangeViolation", () => {
+  it("passes a range inside the attribution window", () => {
+    expect(eventsRangeViolation({ start: "2026-06-02", end: "2026-08-30" })).toBeNull();
+  });
+
+  it("rejects 91 days with no interval, naming the span and the fix", () => {
+    const msg = eventsRangeViolation({ start: "2026-06-01", end: "2026-08-30" });
+    expect(msg).toMatch(/91 days/);
+    expect(msg).toMatch(/interval=month/);
+  });
+
+  it("rejects an explicit interval=total over the window", () => {
+    expect(eventsRangeViolation({ start: "2026-01-01", end: "2026-12-31", interval: "total" })).toMatch(/365 days/);
+  });
+
+  it("allows any span once a sub-interval is set", () => {
+    for (const interval of ["month", "week", "day"]) {
+      expect(eventsRangeViolation({ start: "2020-01-01", end: "2026-12-31", interval })).toBeNull();
+    }
+  });
+
+  it("says nothing when the range is incomplete or unparseable", () => {
+    expect(eventsRangeViolation({ start: "2026-01-01" })).toBeNull();
+    expect(eventsRangeViolation({ end: "2026-01-01" })).toBeNull();
+    expect(eventsRangeViolation({})).toBeNull();
+    expect(eventsRangeViolation({ start: "last-monday", end: "2026-12-31" })).toBeNull();
+  });
+});
+
+describe("isEventsPath", () => {
+  it("matches the events endpoint for any organization", () => {
+    expect(isEventsPath("/api/hoffmann-brothers/events")).toBe(true);
+    expect(isEventsPath("/api/acme/events/")).toBe(true);
+  });
+
+  it("does not match other endpoints", () => {
+    expect(isEventsPath("/api")).toBe(false);
+    expect(isEventsPath("/api/acme/benchmarks")).toBe(false);
+    expect(isEventsPath("/api/acme/insights")).toBe(false);
   });
 });

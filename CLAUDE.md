@@ -21,3 +21,9 @@ bundled by esbuild into `server/index.cjs` with no shipped node_modules.
   before changing endpoint behavior). Design: `docs/superpowers/specs/`.
 - Splitting an events request by account is only valid when `account` or `accountKey` is in
   `fields`; see `canSplitByAccount` in `src/chunking.ts`.
+- `src/schema-compat.ts` restamps every tool schema as JSON Schema 2020-12 on the way out of
+  the transport. MCP SDK 1.x hardcodes a draft-07 target and Claude's client validates with
+  Ajv 2020, which refuses draft-07. Do not remove it, and do not introduce `definitions` or
+  `dependencies` into a tool schema; `tests/server.test.ts` enforces both.
+- Requests the API is certain to reject are refused in `SearchLightClient.preflight` before
+  they are sent, because every rejection still counts against the hourly rate limit.

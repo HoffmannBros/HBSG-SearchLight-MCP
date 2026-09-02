@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { SearchLightApiError, SearchLightClient, SearchLightConfigError, Semaphore } from "../src/client.js";
+import { DateError } from "../src/dates.js";
 
 type Handler = (url: string, init: RequestInit) => Response | Promise<Response>;
 
@@ -164,6 +165,40 @@ describe("access and organization resolution", () => {
     const { client } = makeClient(() => jsonResponse(access));
     expect(await client.listAccounts("acme-group")).toEqual(["acme-hvac", "acme-plumbing"]);
     expect(await client.listAccounts("acme-hvac")).toEqual([]);
+  });
+});
+
+describe("attribution-window pre-flight", () => {
+  it("rejects an over-window events request without spending an API call", async () => {
+    const { client, calls } = makeClient(() => jsonResponse([]));
+    const err = await client
+      .get("/api/acme/events", { fields: "leads", start: "2026-06-01", end: "2026-08-30" })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DateError);
+    expect((err as Error).message).toMatch(/91 days/);
+    expect(calls).toHaveLength(0);
+    expect(client.requestCount).toBe(0);
+  });
+
+  it("runs before the API key check so a bad range never looks like a config problem", async () => {
+    const { client, calls } = makeClient(() => jsonResponse([]), { apiKey: undefined });
+    const err = await client
+      .get("/api/acme/events", { start: "2026-01-01", end: "2026-12-31", interval: "total" })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DateError);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("lets a sub-interval request through untouched", async () => {
+    const { client, calls } = makeClient(() => jsonResponse([{ leads: 1 }]));
+    await client.get("/api/acme/events", { start: "2020-01-01", end: "2026-12-31", interval: "month" });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("leaves non-events endpoints alone", async () => {
+    const { client, calls } = makeClient(() => jsonResponse([]));
+    await client.get("/api/acme/insights", { start: "2020-01-01", end: "2026-12-31" });
+    expect(calls).toHaveLength(1);
   });
 });
 

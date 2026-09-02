@@ -12,10 +12,13 @@ export function registerRawTools(server: McpServer, ctx: AppContext): void {
     {
       title: "Call the SearchLight API directly",
       description:
-        "Escape hatch for anything the typed tools do not cover, including endpoints or parameters added to the beta API later. GET only. Give the path (e.g. /api, /api/<organization>/events) and query parameters exactly as the docs describe; filter expressions must be passed as JSON strings. Array responses are capped inline by max_items; set save_as to write the full response to a JSON file.",
+        "Escape hatch for anything the typed tools do not cover, including endpoints or parameters added to the beta API later. GET only, and it does none of the chunking the typed tools do, so prefer searchlight_query_events or searchlight_export_events_csv for events. Give the path (e.g. /api, /api/<organization>/events) and query parameters exactly as the docs describe; filter expressions must be passed as JSON strings. On /events, a start-to-end span over 90 days needs interval=month, week, or day; without one the request is refused locally rather than spending an API call. Array responses are capped inline by max_items; set save_as to write the full response to a JSON file.",
       inputSchema: {
         path: z.string().regex(/^\/api(\/|$)/).describe("Request path starting with /api."),
-        params: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional().describe("Query parameters."),
+        params: z
+          .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+          .optional()
+          .describe("Query parameters. On /events these are fields, start, end, interval, account/accounts, and filters; spans over 90 days require interval."),
         max_items: z.number().int().min(1).max(5000).default(200).describe("Maximum array items to return inline. Default 200."),
         save_as: z.string().optional().describe("File name to save the full JSON response into the export folder."),
         output_dir: outputDirArg,

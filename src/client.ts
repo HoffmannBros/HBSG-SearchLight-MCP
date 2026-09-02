@@ -1,4 +1,5 @@
 import { setTimeout as sleepFor } from "node:timers/promises";
+import { DateError, eventsRangeViolation, isEventsPath } from "./dates.js";
 
 export interface DictionaryEntry {
   displayName?: string;
@@ -183,8 +184,20 @@ export class SearchLightClient {
     return this.opts.apiKey;
   }
 
+  /**
+   * Reject a request the API is certain to refuse, before it is sent. Runs
+   * ahead of the key check so a malformed range is reported as such rather
+   * than as a configuration problem.
+   */
+  private preflight(path: string, params: QueryParams): void {
+    if (!isEventsPath(path)) return;
+    const violation = eventsRangeViolation(params);
+    if (violation) throw new DateError(violation);
+  }
+
   /** GET a JSON endpoint with retries, rate-limit handling, and concurrency control. */
   async get<T = unknown>(path: string, params: QueryParams = {}): Promise<T> {
+    this.preflight(path, params);
     const apiKey = this.requireKey();
     const url = this.buildUrl(path, params);
     return this.semaphore.run(async () => {

@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createContext } from "./context.js";
+import { withSchemaCompat } from "./schema-compat.js";
 import { registerAccessTools } from "./tools/access.js";
 import { registerBenchmarkTools } from "./tools/benchmarks.js";
 import { registerEventsTools } from "./tools/events.js";
@@ -28,7 +29,7 @@ export function buildServer(env: NodeJS.ProcessEnv = process.env): McpServer {
 
 async function main(): Promise<void> {
   const server = buildServer();
-  await server.connect(new StdioServerTransport());
+  await server.connect(withSchemaCompat(new StdioServerTransport()));
 }
 
 main().catch((err: unknown) => {

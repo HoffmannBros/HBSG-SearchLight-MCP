@@ -2,7 +2,7 @@
 
 Handoff state for HBSG-SearchLight-MCP.
 
-**Last updated:** 2026-09-02
+**Last updated:** 2026-09-02 (v1.0.1)
 
 ## Goal
 
@@ -19,13 +19,40 @@ Approved plan: `~/.claude/plans/i-want-to-build-spicy-walrus.md` (copy of the de
 | Step | Status |
 |---|---|
 | Repo, scaffold, remote `HoffmannBros/HBSG-SearchLight-MCP` | done, pushed |
-| config, csv spool, filters, dates, fields reference, client, chunking, 9 tools | done, 68 tests pass (`npm test`) |
+| config, csv spool, filters, dates, fields reference, client, chunking, 9 tools | done, 90 tests pass (`npm test`) |
 | manifest.json (v0.4, node), README, CLAUDE.md, scripts/pack.sh, scripts/smoke.ts | done |
-| `npm run pack` | passes; `dist/hbsg-searchlight-1.0.0.mcpb`, 268 KB, starts in ~60 ms |
+| `npm run pack` | passes; `dist/hbsg-searchlight-1.0.1.mcpb`, 272 KB, starts in ~58 ms |
 | **Live smoke against the real API (2026-09-02)** | **PASSED**: all 9 tools; see below |
-| Install in Claude Desktop and try | not started (Justin double-clicks the .mcpb) |
+| Install v1.0.0 in Claude Desktop and try | done; found two bugs, fixed in v1.0.1 below |
+| **v1.0.1 fixes (schema dialect, pre-flight range guard)** | **done, 90 tests pass, live-verified** |
+| Reinstall `dist/hbsg-searchlight-1.0.1.mcpb` in Claude Desktop | not started (Justin double-clicks it) |
 | Windows check by a teammate | not started |
-| GitHub Release v1.0.0 with the .mcpb attached | not started |
+| GitHub Release v1.0.1 with the .mcpb attached | not started |
+
+## v1.0.1: two bugs found in real use (2026-09-02)
+
+**1. All three export tools were uncallable.** Claude's client refused them with "has an
+invalid outputSchema: JSON Schema declares an unsupported dialect". Root cause: MCP SDK 1.x
+converts tool schemas with a hardcoded draft-07 target (`server/zod-json-schema-compat.ts`
+passes no `target`; `mapMiniTarget` falls back to `draft-7`), and the client validates with
+an Ajv 2020 instance that knows only 2020-12. Only the export tools declare an
+`outputSchema`, which is why the other six worked. The SDK exposes no option to change the
+target, so `src/schema-compat.ts` restamps the dialect on the way out of the transport and
+rewrites the draft-07 tuple form (`items: [...]` plus `additionalItems`) that 2020-12 renamed.
+Reproduced locally with `new Ajv2020().compile(schema)`, which throws
+`no schema with key or ref "http://json-schema.org/draft-07/schema#"`.
+
+**2. Over-90-day events requests burned API calls.** The typed events tools guarded the
+attribution window client-side, but `searchlight_api_call` passed anything through, so each
+attempt cost a real request against the per-user hourly limit. `SearchLightClient.preflight`
+now refuses any `/api/<org>/events` request whose start-to-end span exceeds 90 days without
+`interval=month|week|day`, before the key check and before the fetch. The raw tool's
+description now states the rule as well.
+
+Live verification (2026-09-02, against the real API through the built bundle):
+all 9 tools compile under Ajv 2020; a real `searchlight_export_events_csv` call returns
+`structuredContent` that validates against its own emitted `outputSchema`; the raw
+over-window call is refused locally with no request sent. `npm run smoke` still passes.
 
 ### Live smoke results (2026-09-02, Justin's key, org `hoffmann-brothers`, 4 accounts)
 
@@ -46,12 +73,12 @@ Approved plan: `~/.claude/plans/i-want-to-build-spicy-walrus.md` (copy of the de
 
 ## Next actions, in order
 
-1. Justin installs `dist/hbsg-searchlight-1.0.0.mcpb` in Claude Desktop, tries "what
-   SearchLight organizations can I see" and a 6-month CSV export; confirm the file lands in
+1. Justin installs `dist/hbsg-searchlight-1.0.1.mcpb` in Claude Desktop (replacing 1.0.0) and
+   confirms `searchlight_export_events_csv` now runs, with the file landing in
    Documents/SearchLight Reports.
 2. One Windows teammate installs and repeats step 1.
-3. `git tag v1.0.0 && git push --tags`, then
-   `gh release create v1.0.0 dist/hbsg-searchlight-1.0.0.mcpb --title v1.0.0`.
+3. `git tag v1.0.1 && git push --tags`, then
+   `gh release create v1.0.1 dist/hbsg-searchlight-1.0.1.mcpb --title v1.0.1`.
 
 ## Ideas not built (YAGNI until asked)
 
@@ -68,4 +95,8 @@ Approved plan: `~/.claude/plans/i-want-to-build-spicy-walrus.md` (copy of the de
 - Claude Desktop 1.40609.1 on this Mac bundles Electron 42 (Node 24). Desktop does NOT expand
   `${DOCUMENTS}` in user_config defaults (found in the ServiceTitan bundle), so the server
   expands path tokens itself.
-- MCP TypeScript SDK: using 1.30.0, not the 2.0.0 package split released 2026-07-27.
+- MCP TypeScript SDK: using 1.30.0, not the 2.0.0 package split released 2026-07-27. 1.30.0
+  is the newest 1.x, and it still emits draft-07 tool schemas; see the v1.0.1 note above.
+- The API's own wording confirms the boundary: a 2026-06-01 to 2026-08-30 events request
+  returns 400 "Requested range spans 91 days, exceeding the 90-day attribution window", so
+  90 days inclusive is allowed and `MAX_INTERVAL_DAYS = 90` is right.

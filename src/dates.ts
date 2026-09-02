@@ -124,3 +124,32 @@ export function monthRange(from: string, to: string): string[] {
   }
   return out;
 }
+
+/** True for the events endpoint of any organization, e.g. /api/acme/events. */
+export function isEventsPath(path: string): boolean {
+  return /^\/api\/[^/]+\/events\/?$/.test(path.split("?")[0] ?? "");
+}
+
+/**
+ * The events endpoint rejects any range longer than MAX_INTERVAL_DAYS unless a
+ * sub-interval splits it, and each rejection costs a request against the
+ * per-user hourly limit. Returns the message to fail with, or null when the
+ * request is fine or we cannot tell (unparseable or partial range).
+ */
+export function eventsRangeViolation(params: {
+  start?: unknown;
+  end?: unknown;
+  interval?: unknown;
+}): string | null {
+  const interval = params.interval === undefined || params.interval === null ? "total" : String(params.interval);
+  if (interval !== "total") return null;
+  if (typeof params.start !== "string" || typeof params.end !== "string") return null;
+  let days: number;
+  try {
+    days = daysInclusive(params.start, params.end);
+  } catch {
+    return null; // Let the API speak for a range we cannot parse.
+  }
+  if (days <= MAX_INTERVAL_DAYS) return null;
+  return `Requested range spans ${days} days, exceeding SearchLight's ${MAX_INTERVAL_DAYS}-day attribution window. Pass interval=month, week, or day to split it, or shorten the range. Not sent, so it cost no API call.`;
+}

@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "hbsg-searchlight",
   "display_name": "SearchLight (Hoffmann Brothers)",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Query SearchLight marketing attribution data: events, benchmarks, insights, and CSV exports of any size.",
   "long_description": "Connects Claude to the SearchLight API for Hoffmann Brothers. Ask for spend, leads, revenue, ROAS, booking rates, and funnel metrics broken out by account, campaign, channel, business unit, and more; compare against anonymized industry benchmarks; read SearchLight's AI-generated insights; and export any query to a CSV file, with long date ranges and many accounts handled automatically.\n\nSetup: sign in to the SearchLight app, open Settings, then API, and generate a user API key (it starts with sl_). Paste it into the API key field below. You can only see the organizations and accounts your SearchLight login can see.\n\nCSV exports are saved to the export folder you choose (default: Documents/SearchLight Reports).",
   "author": {

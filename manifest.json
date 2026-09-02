@@ -1,0 +1,74 @@
+{
+  "manifest_version": "0.4",
+  "name": "hbsg-searchlight",
+  "display_name": "SearchLight (Hoffmann Brothers)",
+  "version": "1.0.0",
+  "description": "Query SearchLight marketing attribution data: events, benchmarks, insights, and CSV exports of any size.",
+  "long_description": "Connects Claude to the SearchLight API for Hoffmann Brothers. Ask for spend, leads, revenue, ROAS, booking rates, and funnel metrics broken out by account, campaign, channel, business unit, and more; compare against anonymized industry benchmarks; read SearchLight's AI-generated insights; and export any query to a CSV file, with long date ranges and many accounts handled automatically.\n\nSetup: sign in to the SearchLight app, open Settings, then API, and generate a user API key (it starts with sl_). Paste it into the API key field below. You can only see the organizations and accounts your SearchLight login can see.\n\nCSV exports are saved to the export folder you choose (default: Documents/SearchLight Reports).",
+  "author": {
+    "name": "Justin Schmidt",
+    "email": "justin+ai@justinschmidt.me"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HoffmannBros/HBSG-SearchLight-MCP.git"
+  },
+  "support": "https://github.com/HoffmannBros/HBSG-SearchLight-MCP/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.cjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.cjs"],
+      "env": {
+        "SEARCHLIGHT_API_KEY": "${user_config.api_key}",
+        "SEARCHLIGHT_OUTPUT_DIR": "${user_config.output_dir}",
+        "SEARCHLIGHT_DEFAULT_ORGANIZATION": "${user_config.default_organization}"
+      }
+    }
+  },
+  "tools": [
+    { "name": "searchlight_list_access", "description": "List the organizations, accounts, and endpoints your API key can reach" },
+    { "name": "searchlight_list_fields", "description": "Search the dimensions and metrics you can request" },
+    { "name": "searchlight_query_events", "description": "Aggregate metrics over a date range, broken out by dimensions, with filters" },
+    { "name": "searchlight_export_events_csv", "description": "Run an events query of any size and write it to a CSV file" },
+    { "name": "searchlight_get_benchmarks", "description": "Industry benchmarks and percentile ranges for a month" },
+    { "name": "searchlight_export_benchmarks_csv", "description": "Benchmarks for several months written to one CSV file" },
+    { "name": "searchlight_get_insights", "description": "SearchLight's AI-generated insight documents and action items" },
+    { "name": "searchlight_export_insights_csv", "description": "Insight action items and findings written to a CSV or JSON file" },
+    { "name": "searchlight_api_call", "description": "Call any SearchLight API path directly" }
+  ],
+  "keywords": ["searchlight", "marketing", "attribution", "leads", "hoffmann", "csv"],
+  "license": "UNLICENSED",
+  "privacy_policies": ["https://searchlight.digital/privacy"],
+  "compatibility": {
+    "platforms": ["darwin", "win32"],
+    "runtimes": {
+      "node": ">=20.0.0"
+    }
+  },
+  "user_config": {
+    "api_key": {
+      "type": "string",
+      "title": "SearchLight API key",
+      "description": "Your personal key from the SearchLight app: Settings, then API. Starts with sl_. Stored in your OS keychain.",
+      "sensitive": true,
+      "required": true
+    },
+    "output_dir": {
+      "type": "directory",
+      "title": "Export folder",
+      "description": "Where CSV exports are saved.",
+      "required": false,
+      "default": "${DOCUMENTS}/SearchLight Reports"
+    },
+    "default_organization": {
+      "type": "string",
+      "title": "Default organization (optional)",
+      "description": "Organization key to use when you don't name one. Leave blank if your key reaches only one organization; Claude can also look it up with searchlight_list_access.",
+      "required": false,
+      "default": ""
+    }
+  }
+}

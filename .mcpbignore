@@ -21,3 +21,7 @@ smoke-output/
 dist/
 *.mcpb
 .DS_Store
+
+# Not needed at runtime; the bundle has no node_modules.
+package-lock.json
+.env.example

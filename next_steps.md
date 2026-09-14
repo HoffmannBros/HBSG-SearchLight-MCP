@@ -2,7 +2,7 @@
 
 Handoff state for HBSG-SearchLight-MCP.
 
-**Last updated:** 2026-09-02 (v1.0.1)
+**Last updated:** 2026-09-14 (v1.0.1)
 
 ## Goal
 
@@ -22,6 +22,8 @@ Approved plan: `~/.claude/plans/i-want-to-build-spicy-walrus.md` (copy of the de
 | config, csv spool, filters, dates, fields reference, client, chunking, 9 tools | done, 90 tests pass (`npm test`) |
 | manifest.json (v0.4, node), README, CLAUDE.md, scripts/pack.sh, scripts/smoke.ts | done |
 | `npm run pack` | passes; `dist/hbsg-searchlight-1.0.1.mcpb`, 272 KB, starts in ~58 ms |
+| **`.mcpbignore` missed `AGENTS.md` (2026-09-14)** | **fixed; pack was failing its own contents check** |
+| Windows clone set up and verified (2026-09-14) | done: build, 90 tests, live smoke, pack all pass |
 | **Live smoke against the real API (2026-09-02)** | **PASSED**: all 9 tools; see below |
 | Install v1.0.0 in Claude Desktop and try | done; found two bugs, fixed in v1.0.1 below |
 | **v1.0.1 fixes (schema dialect, pre-flight range guard)** | **done, 90 tests pass, live-verified** |
@@ -76,6 +78,37 @@ over-window call is refused locally with no request sent. `npm run smoke` still 
 - 90-day rejection carries `code: "range-too-long"`; the client keys on it.
 - The hourly rate limit was not reached across ~25 calls.
 
+## Packaging regression found and fixed (2026-09-14)
+
+`npm run pack` failed at "Checking archive contents": the archive held six files, not the
+expected five. `AGENTS.md` was added in `11b68b5` / `2d77d90` but never added to
+`.mcpbignore`, which still listed only `CLAUDE.md`, so agent guidance was being packed into
+the shipped bundle. Fixed by adding `AGENTS.md` next to `CLAUDE.md` in `.mcpbignore`.
+
+The expected-five-files guard in `scripts/pack.sh:32` is what caught it. Leave that list
+strict; when a new top-level dev file appears, add it to `.mcpbignore` rather than widening
+the guard. Any future `AGENTS.md`-style file needs the same treatment.
+
+## Windows environment (2026-09-14)
+
+Justin's Windows 11 clone at `C:\Users\justin.schmidt\HBSG Searchlight MCP`, Node v24.18.0,
+npm 11.16.0. `npm install` warns that esbuild's postinstall is not in `allowScripts`; the
+binary works anyway and the build is clean, so no action needed. Verified on Windows:
+`npm run build`, 90/90 vitest, `npm run smoke`, and `npm run pack` (bundle runs from a clean
+unpack, 9 tools in 360 ms).
+
+This does not tick the "Windows check by a teammate" box below, which is about installing the
+.mcpb in Claude Desktop, not about the repo toolchain.
+
+## Live smoke re-run (2026-09-14, Justin's key, org `hoffmann-brothers`)
+
+`SMOKE OK`, all 9 tools, on Windows against the real API. Calls were far faster than the
+2026-09-02 Mac run (18 to 169 ms, versus 5 to 9 s), so the earlier "~5 to 9 s is normal" note
+is not a floor; SearchLight latency varies a lot. Events export, 6 months monthly: 1,667 rows
+/ 152.8 KB in one call. Benchmarks Jun to Aug: 18 rows, 3 calls. Insights: 26 items to a
+26-row CSV. The three export tools work, so the v1.0.1 schema-dialect fix is confirmed
+against the live API a second time.
+
 ## Next actions, in order
 
 1. Justin installs `dist/hbsg-searchlight-1.0.1.mcpb` in Claude Desktop (replacing 1.0.0) and
@@ -84,6 +117,11 @@ over-window call is refused locally with no request sent. `npm run smoke` still 
 2. One Windows teammate installs and repeats step 1.
 3. Tag: done. Remaining:
    `gh release create v1.0.1 dist/hbsg-searchlight-1.0.1.mcpb --title v1.0.1`.
+   Note: `gh` is not installed on the Windows machine, so this needs a `gh` install or the
+   GitHub web UI.
+4. Re-pack before attaching a bundle to any release: any .mcpb packed from `11b68b5` up to
+   the `.mcpbignore` fix in `b5117be` contains `AGENTS.md`. The v1.0.0 release bundle
+   predates `AGENTS.md` and is unaffected.
 
 ## Ideas not built (YAGNI until asked)
 

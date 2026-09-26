@@ -101,6 +101,24 @@ try {
     filename: "smoke_benchmarks",
   });
 
+  await call("searchlight_compare_to_benchmark", { organization: org, month: prevMonth });
+  await call("searchlight_compare_periods", {
+    organization: org,
+    fields: ["account", "spend", "leads", "bookRate"],
+    start: start30,
+    end,
+    sort_by: "leads",
+  });
+
+  // Since 2026-09-21 an account key in the path is a 404; the tools reroute it through its organization.
+  const orgNames = new Set(orgs.map((o) => o.organization));
+  const viaOrg = orgs.flatMap((o) => o.accounts ?? []).find((a) => !orgNames.has(a));
+  if (viaOrg) {
+    const rerouted = await call("searchlight_query_events", { organization: viaOrg, fields: ["spend", "leads"], start: start30, end });
+    const notes = (rerouted.notes as string[] | undefined) ?? [];
+    if (!notes.some((n) => n.includes("went through its organization"))) throw new Error("account-key reroute note missing");
+  }
+
   await call("searchlight_get_insights", { organization: org, max_items: 3 });
   await call("searchlight_export_insights_csv", { organization: org, filename: "smoke_insights" });
 

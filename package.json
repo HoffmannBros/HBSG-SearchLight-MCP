@@ -1,6 +1,6 @@
 {
   "name": "hbsg-searchlight",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": true,
   "description": "Claude Desktop extension for the SearchLight API: events, benchmarks, insights, and CSV exports.",
   "type": "module",
@@ -13,6 +13,7 @@
     "test": "npm run build && vitest run",
     "test:watch": "vitest",
     "smoke": "tsx scripts/smoke.ts",
+    "probe": "tsx scripts/probe.ts",
     "inspect": "npm run build && npx @modelcontextprotocol/inspector node server/index.cjs",
     "pack": "bash scripts/pack.sh"
   },

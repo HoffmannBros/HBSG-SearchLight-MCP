@@ -3,6 +3,9 @@ import {
   DateError,
   daysInclusive,
   eventsRangeViolation,
+  localToday,
+  monthWindow,
+  precedingWindow,
   halveWindow,
   isEventsPath,
   intervalBoundaries,
@@ -127,5 +130,39 @@ describe("isEventsPath", () => {
     expect(isEventsPath("/api")).toBe(false);
     expect(isEventsPath("/api/acme/benchmarks")).toBe(false);
     expect(isEventsPath("/api/acme/insights")).toBe(false);
+  });
+});
+
+describe("monthWindow", () => {
+  it("covers a past month in full", () => {
+    expect(monthWindow("2026-02", "2026-09-26")).toEqual({ start: "2026-02-01", end: "2026-02-28", partial: false });
+  });
+
+  it("covers the current month through today", () => {
+    expect(monthWindow("2026-09", "2026-09-26")).toEqual({ start: "2026-09-01", end: "2026-09-26", partial: true });
+  });
+
+  it("refuses future months and bad input", () => {
+    expect(() => monthWindow("2026-10", "2026-09-26")).toThrow(/future/);
+    expect(() => monthWindow("2026-13", "2026-09-26")).toThrow(DateError);
+  });
+
+  it("maps previous-mtd to the same elapsed days last month, clamped to its length", () => {
+    expect(monthWindow("previous-mtd", "2026-08-17")).toEqual({ start: "2026-07-01", end: "2026-07-17", partial: true });
+    expect(monthWindow("previous-mtd", "2026-03-31")).toEqual({ start: "2026-02-01", end: "2026-02-28", partial: true });
+    expect(monthWindow("previous-mtd", "2026-01-15")).toEqual({ start: "2025-12-01", end: "2025-12-15", partial: true });
+  });
+});
+
+describe("precedingWindow", () => {
+  it("returns the same number of days ending the day before start", () => {
+    expect(precedingWindow("2026-08-01", "2026-08-31")).toEqual({ start: "2026-07-01", end: "2026-07-31" });
+    expect(precedingWindow("2026-03-01", "2026-03-07")).toEqual({ start: "2026-02-22", end: "2026-02-28" });
+  });
+});
+
+describe("localToday", () => {
+  it("formats the local calendar date", () => {
+    expect(localToday(new Date(2026, 0, 5, 23, 30))).toBe("2026-01-05");
   });
 });

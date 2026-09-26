@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AccessInfo, EndpointInfo } from "../client.js";
 import type { AppContext } from "../context.js";
-import { BENCHMARK_DIMENSIONS, BENCHMARK_METRICS, STATIC_FIELDS, staticField, type FieldInfo } from "../fields.js";
+import { BENCHMARK_DIMENSIONS, BENCHMARK_METRICS, METRIC_GUIDE, STATIC_FIELDS, staticField, type FieldInfo } from "../fields.js";
 import { describeError, markdownTable, textResult } from "../format.js";
 import { READ_ONLY, guarded } from "./common.js";
 
@@ -98,7 +98,7 @@ export function registerAccessTools(server: McpServer, ctx: AppContext): void {
     {
       title: "List SearchLight fields",
       description:
-        "Search the dimensions and metrics you can request in fields and filters. Uses the live dictionary from the API and falls back to a bundled reference. Filter by type, endpoint, or a text search over names and definitions.",
+        "Search the dimensions and metrics you can request in fields and filters. Uses the live dictionary from the API and falls back to a bundled reference. Filter by type, endpoint, or a text search over names and definitions. Core metrics (leads, bookRate, roasClosed, avgTicket, matchRate and others) come with caveats on how to read them; pass them on when interpreting results.",
       inputSchema: {
         type: z.enum(["dimension", "metric"]).optional().describe("Only dimensions or only metrics."),
         endpoint: z.enum(["events", "benchmarks"]).optional().describe("Only fields the given endpoint supports."),
@@ -133,14 +133,17 @@ export function registerAccessTools(server: McpServer, ctx: AppContext): void {
         endpoints: f.endpoints.join("/"),
         values: f.values ? f.values.join(" | ") : "",
       }));
+      const guide = Object.fromEntries(fields.filter((f) => METRIC_GUIDE[f.name]).map((f) => [f.name, METRIC_GUIDE[f.name]!]));
+      const caveats = Object.entries(guide).map(([name, text]) => `- ${name}: ${text}`);
       const text = [
         `${fields.length} field(s)${access ? " (live dictionary)" : ""}.`,
         note,
         markdownTable(rows, ["name", "type", "definition", "format", "endpoints", "values"]),
+        caveats.length ? `Reading these metrics:\n${caveats.join("\n")}` : "",
       ]
         .filter(Boolean)
         .join("\n\n");
-      return textResult(text, { source: access ? "live" : "static", note: note || undefined, fields });
+      return textResult(text, { source: access ? "live" : "static", note: note || undefined, fields, guide });
     }),
   );
 }

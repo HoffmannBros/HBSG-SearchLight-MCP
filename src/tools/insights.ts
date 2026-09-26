@@ -3,7 +3,7 @@ import fsp from "node:fs/promises";
 import { z } from "zod";
 import { fetchInsightsChunked } from "../chunking.js";
 import type { AppContext } from "../context.js";
-import { resolveOrganization } from "../context.js";
+import { resolveScope } from "../context.js";
 import { RowSpool, sanitizeFilename, uniquePath } from "../csv.js";
 import { DateError, daysInclusive } from "../dates.js";
 import { INSIGHT_FIELDS } from "../fields.js";
@@ -69,11 +69,12 @@ export function registerInsightTools(server: McpServer, ctx: AppContext): void {
     guarded(async (args) => {
       validateDates(args);
       const before = ctx.client.requestCount;
-      const org = await resolveOrganization(ctx, args.organization);
+      const scope = await resolveScope(ctx, args.organization, pickAccounts(args.account, args.accounts));
+      const org = scope.organization;
       const items: InsightItem[] = [];
       await fetchInsightsChunked<InsightItem>(
         ctx.client,
-        { organization: org, accounts: pickAccounts(args.account, args.accounts), start: args.start, end: args.end, fields: args.fields },
+        { organization: org, accounts: scope.accounts, start: args.start, end: args.end, fields: args.fields },
         async (chunk) => {
           items.push(...chunk);
         },
@@ -88,6 +89,7 @@ export function registerInsightTools(server: McpServer, ctx: AppContext): void {
       const limited = limitRows(items, args.max_items);
       const text = [
         `${limited.total} insight item(s) for ${org}${limited.truncated ? `, showing ${limited.rows.length}` : ""}. ${ctx.client.requestCount - before} API call(s).`,
+        ...scope.notes,
         limited.rows.map((i) => `- ${describeInsight(i)}`).join("\n"),
         "```json",
         JSON.stringify(limited.rows, null, 2),
@@ -128,12 +130,13 @@ export function registerInsightTools(server: McpServer, ctx: AppContext): void {
       validateDates(args);
       const before = ctx.client.requestCount;
       const started = Date.now();
-      const org = await resolveOrganization(ctx, args.organization);
+      const scope = await resolveScope(ctx, args.organization, pickAccounts(args.account, args.accounts));
+      const org = scope.organization;
       const dir = resolveOutputDir(ctx, args.output_dir);
       const stem = sanitizeFilename(
         args.filename?.trim() || `insights_${sanitizeFilename(org)}_${args.start && args.end ? `${args.start}_${args.end}` : "latest"}`,
       );
-      const query = { organization: org, accounts: pickAccounts(args.account, args.accounts), start: args.start, end: args.end, fields: args.fields };
+      const query = { organization: org, accounts: scope.accounts, start: args.start, end: args.end, fields: args.fields };
       const apiCallsUsed = () => ctx.client.requestCount - before;
 
       if (args.mode === "json") {
@@ -146,7 +149,8 @@ export function registerInsightTools(server: McpServer, ctx: AppContext): void {
         const body = JSON.stringify(items, null, 2);
         await fsp.writeFile(target, body, "utf8");
         const bytes = Buffer.byteLength(body);
-        return textResult(`Wrote ${items.length} item(s) to ${target} (${formatBytes(bytes)}). ${apiCallsUsed()} API call(s).`, {
+        const jsonText = [`Wrote ${items.length} item(s) to ${target} (${formatBytes(bytes)}). ${apiCallsUsed()} API call(s).`, ...scope.notes].join("\n\n");
+        return textResult(jsonText, {
           path: target,
           items: items.length,
           rows: items.length,
@@ -176,6 +180,7 @@ export function registerInsightTools(server: McpServer, ctx: AppContext): void {
       const result = await spool.finalize(withExtension(stem, args.format), { format: args.format, bom: args.excel_bom });
       const text = [
         `Wrote ${result.rows} row(s) from ${documents} item(s) to ${result.path} (${formatBytes(result.bytes)}). ${apiCallsUsed()} API call(s), ${Date.now() - started} ms.`,
+        ...scope.notes,
         preview.length > 0 ? `Preview:\n${markdownTable(preview, ["account", "period", "kind", "priority", "title", "impact_display"])}` : "",
       ]
         .filter(Boolean)

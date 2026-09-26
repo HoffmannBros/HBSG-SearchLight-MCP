@@ -4,6 +4,8 @@ import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { sanitizeFilename, uniquePath } from "../csv.js";
 import { formatBytes, limitRows, textResult } from "../format.js";
+import { SearchLightConfigError } from "../client.js";
+import { rawPathProblem } from "../scope.js";
 import { READ_ONLY, guarded, outputDirArg, resolveOutputDir, withExtension } from "./common.js";
 
 export function registerRawTools(server: McpServer, ctx: AppContext): void {
@@ -12,7 +14,7 @@ export function registerRawTools(server: McpServer, ctx: AppContext): void {
     {
       title: "Call the SearchLight API directly",
       description:
-        "Escape hatch for anything the typed tools do not cover, including endpoints or parameters added to the beta API later. GET only, and it does none of the chunking the typed tools do, so prefer searchlight_query_events or searchlight_export_events_csv for events. Give the path (e.g. /api, /api/<organization>/events) and query parameters exactly as the docs describe; filter expressions must be passed as JSON strings. On /events, a start-to-end span over 90 days needs interval=month, week, or day; without one the request is refused locally rather than spending an API call. Array responses are capped inline by max_items; set save_as to write the full response to a JSON file.",
+        "Escape hatch for anything the typed tools do not cover, including endpoints or parameters added to the beta API later. GET only, and it does none of the chunking the typed tools do, so prefer searchlight_query_events or searchlight_export_events_csv for events. Give the path (e.g. /api, /api/<organization>/events) and query parameters exactly as the docs describe; filter expressions must be passed as JSON strings. On /events, a start-to-end span over 90 days needs interval=month, week, or day; without one the request is refused locally rather than spending an API call. The path segment must be an organization; an account reached through an organization goes in account=, and a path or account outside what the key can reach is refused locally too. Array responses are capped inline by max_items; set save_as to write the full response to a JSON file.",
       inputSchema: {
         path: z.string().regex(/^\/api(\/|$)/).describe("Request path starting with /api."),
         params: z
@@ -27,6 +29,14 @@ export function registerRawTools(server: McpServer, ctx: AppContext): void {
     },
     guarded(async ({ path, params, max_items, save_as, output_dir }) => {
       const before = ctx.client.requestCount;
+      ctx.client.preflight(path, params ?? {});
+      if (/^\/api\/[^/]/.test(path)) {
+        // Any failure here (no key, /api down) falls through to the real call,
+        // which reports it.
+        const access = await ctx.client.getAccess().catch(() => undefined);
+        const problem = access ? rawPathProblem(access, path, params ?? {}) : undefined;
+        if (problem) throw new SearchLightConfigError(`Refused before sending: ${problem}`);
+      }
       const data = await ctx.client.get<unknown>(path, params ?? {});
       const apiCalls = ctx.client.requestCount - before;
       let savedPath: string | undefined;

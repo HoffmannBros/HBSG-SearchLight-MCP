@@ -18,6 +18,8 @@ const EXPECTED_TOOLS = [
   "searchlight_export_benchmarks_csv",
   "searchlight_get_insights",
   "searchlight_export_insights_csv",
+  "searchlight_compare_to_benchmark",
+  "searchlight_compare_periods",
   "searchlight_api_call",
 ];
 
@@ -41,7 +43,7 @@ describe("built server over stdio", () => {
     await client?.close();
   });
 
-  it("exposes exactly the nine SearchLight tools with read-only annotations", async () => {
+  it("exposes exactly the eleven SearchLight tools with read-only annotations", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...EXPECTED_TOOLS].sort());
     for (const tool of tools) {

@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { SearchLightApiError } from "../client.js";
 import type { AppContext } from "../context.js";
-import { resolveOrganization } from "../context.js";
+import { resolveScope } from "../context.js";
 import { RowSpool, sanitizeFilename, type Row } from "../csv.js";
 import { DateError, monthRange } from "../dates.js";
 import { BENCHMARK_DIMENSIONS, BENCHMARK_METRICS } from "../fields.js";
@@ -24,7 +24,7 @@ import {
 } from "./common.js";
 
 const MONTH = /^\d{4}-\d{2}$/;
-const monthArg = z
+export const monthArg = z
   .string()
   .regex(/^(\d{4}-\d{2}|previous-mtd)$/)
   .describe("Calendar month as YYYY-MM, or previous-mtd for the prior month through the same elapsed days as the current month-to-date. Future months are rejected.");
@@ -36,12 +36,12 @@ const benchmarkFieldsArg = z
     `Benchmark metrics and optional dimensions, in output order. Metrics: ${BENCHMARK_METRICS.join(", ")}. Dimensions: ${BENCHMARK_DIMENSIONS.join(", ")}.`,
   );
 
-const benchmarkFiltersArg = z
+export const benchmarkFiltersArg = z
   .record(z.string(), z.unknown())
   .optional()
   .describe(`Filters on the benchmark dimensions only (${BENCHMARK_DIMENSIONS.join(", ")}), e.g. {"normalizedBusinessUnit":"HVAC"}.`);
 
-function benchmarkParams(fields: string[], filters: Record<string, unknown> | undefined, accounts: string[] | undefined) {
+export function benchmarkParams(fields: string[], filters: Record<string, unknown> | undefined, accounts: string[] | undefined) {
   const allowed: readonly string[] = BENCHMARK_DIMENSIONS;
   for (const key of Object.keys(filters ?? {})) {
     if (!allowed.includes(key)) {
@@ -76,15 +76,18 @@ export function registerBenchmarkTools(server: McpServer, ctx: AppContext): void
       annotations: READ_ONLY,
     },
     guarded(async ({ organization, fields, month, account, accounts, filters }) => {
-      const org = await resolveOrganization(ctx, organization);
-      const params = benchmarkParams(fields, filters, pickAccounts(account, accounts));
+      const scope = await resolveScope(ctx, organization, pickAccounts(account, accounts));
+      const org = scope.organization;
+      const params = benchmarkParams(fields, filters, scope.accounts);
       const rows = await ctx.client.get<Row[]>(`/api/${encodeURIComponent(org)}/benchmarks`, { ...params, month });
       const columns = inferColumns(rows, ["series", "cohortAccounts", ...fields]);
-      return textResult(`${rows.length} row(s) for ${org}, month=${month}.\n\n${markdownTable(rows, columns)}`, {
+      const text = [`${rows.length} row(s) for ${org}, month=${month}.`, ...scope.notes, markdownTable(rows, columns)].join("\n\n");
+      return textResult(text, {
         organization: org,
         month,
         rowCount: rows.length,
         rows,
+        notes: scope.notes,
       });
     }),
   );
@@ -133,8 +136,9 @@ export function registerBenchmarkTools(server: McpServer, ctx: AppContext): void
       }
       const unique = [...new Set(months)];
       if (unique.length === 0) throw new DateError("Give months, or start_month and end_month.");
-      const org = await resolveOrganization(ctx, args.organization);
-      const params = benchmarkParams(args.fields, args.filters, pickAccounts(args.account, args.accounts));
+      const scope = await resolveScope(ctx, args.organization, pickAccounts(args.account, args.accounts));
+      const org = scope.organization;
+      const params = benchmarkParams(args.fields, args.filters, scope.accounts);
       const path = `/api/${encodeURIComponent(org)}/benchmarks`;
       const skipped: Array<{ month: string; reason: string }> = [];
       const results = await Promise.all(
@@ -165,7 +169,7 @@ export function registerBenchmarkTools(server: McpServer, ctx: AppContext): void
         format: args.format,
         bom: args.excel_bom,
       });
-      const notes = skipped.map((s) => `Skipped ${s.month}: ${s.reason}`);
+      const notes = [...scope.notes, ...skipped.map((s) => `Skipped ${s.month}: ${s.reason}`)];
       const apiCalls = ctx.client.requestCount - before;
       const elapsedMs = Date.now() - started;
       const text = [

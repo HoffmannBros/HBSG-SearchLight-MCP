@@ -2,7 +2,7 @@
 
 Handoff state for HBSG-SearchLight-MCP.
 
-**Last updated:** 2026-09-14 (v1.0.1)
+**Last updated:** 2026-09-26 (v1.1.0 on branch `claude/api-tools-features-5duu12`, not merged or tagged)
 
 ## Goal
 
@@ -31,6 +31,8 @@ Approved plan: `~/.claude/plans/i-want-to-build-spicy-walrus.md` (copy of the de
 | Windows check by a teammate | not started |
 | Tag `v1.0.1` pushed to origin | done, points at `3b20969` |
 | GitHub Release v1.0.1 with the .mcpb attached | not started |
+| **v1.1.0: strict-path fix, 2 compare tools, probe script, metric guide (2026-09-26)** | **done on branch, 123 tests + pack pass; not live-verified** |
+| `npm run probe` and `npm run smoke` against the real API for 1.1.0 | not started (needs Justin's key; the cloud session could not reach SearchLight) |
 
 `v1.0.0` was tagged and released with its .mcpb attached (0 downloads). That build cannot run
 any of the three export tools, so v1.0.1 should replace it as the latest release before
@@ -109,7 +111,53 @@ is not a floor; SearchLight latency varies a lot. Events export, 6 months monthl
 26-row CSV. The three export tools work, so the v1.0.1 schema-dialect fix is confirmed
 against the live API a second time.
 
+## v1.1.0 (2026-09-26, cloud session, docs-only probe)
+
+The cloud container had no key and its network policy blocked `searchlight.digital` and
+`docs.searchlightdigital.io`, so the API was probed through its docs (fetched with a web
+extraction service), not live. Findings:
+
+- **2026-09-21 release note, "Strict organization paths" (breaking).** An account key in the
+  path now returns 404 when the account is reached through an organization, and an
+  `account`/`accounts` value outside the path's organization returns 404
+  (`inaccessible-accounts`) instead of being dropped. `organizationArg` still advertised "an
+  account key as a shortcut", so a model following it spent a request on a 404.
+- Already handled: benchmarks `previous-mtd`, 503/504 retries, the insights 200-document cap.
+- The metrics page gained "Interpreting the core metrics" (lag on closed revenue, ROAS on
+  zero-spend channels, leads vs conversions, bookRate's unfiltered denominator, matchRate as
+  data quality). It now feeds `METRIC_GUIDE` in `src/fields.ts`.
+
+What shipped on the branch:
+
+- `src/scope.ts` + `resolveScope` in `src/context.ts`: every typed tool checks organization and
+  accounts against the cached `/api` before sending. An account key passed as organization is
+  rerouted through its parent org with `account=` and a note; accounts outside the org and
+  unknown orgs are refused locally. If `/api` itself fails, the request goes out unchecked.
+  `searchlight_api_call` refuses (does not rewrite) an account-key path. Cost: one `/api` call
+  per 10 minutes even when a default org is configured (previously none).
+- `searchlight_compare_to_benchmark`: events for the month (by account, optional benchmark
+  dimension) joined to the benchmark distribution, with a band and a direction-aware standing
+  (`LOWER_IS_BETTER` in `src/fields.ts`). ROAS and cost metrics read "n/a (no spend)" at zero
+  spend. 2 calls. Current month and `previous-mtd` use the local date for the events window;
+  whether SearchLight's own MTD cutoff is today or yesterday is **unverified**.
+- `searchlight_compare_periods`: one events query over two ranges (default: the preceding
+  equal-length range), joined on dimensions with `m`, `m_prev`, `m_change`, `m_pct`. Metric vs
+  dimension comes from the live dictionary, falling back to the bundled list.
+- `searchlight_list_fields` prints metric caveats; the server instructions carry a summary.
+- `npm run probe` (`scripts/probe.ts`): diffs the live dictionary and endpoint parameters
+  against the bundled reference, records the strict-path 404s and three 400 error codes, and
+  the live insights shape. About 8 requests; writes `smoke-output/probe-<date>.md`. Verified
+  only against a local fake server.
+- `npm run smoke` now also calls both compare tools and checks the account-key reroute.
+
 ## Next actions, in order
+
+0. On the Mac or Windows clone, check out `claude/api-tools-features-5duu12`, then run
+   `npm run probe` and `npm run smoke`. Paste the probe report into the next session: it
+   drives a `src/fields.ts` refresh (the live dictionary had 121 fields vs 92 bundled) and
+   tells us which 400 codes are worth adding to `SearchLightClient.preflight`. Then install
+   `dist/hbsg-searchlight-1.1.0.mcpb` in place of 1.0.1 and ask it "How did each account do
+   against the industry last month?" and "Compare last 30 days to the 30 before by campaign".
 
 1. Justin installs `dist/hbsg-searchlight-1.0.1.mcpb` in Claude Desktop (replacing 1.0.0) and
    confirms `searchlight_export_events_csv` now runs, with the file landing in
@@ -127,7 +175,11 @@ against the live API a second time.
 
 - Sorting exported rows by start/account after a split (currently completion order; only
   matters when a split happens, which the smoke never triggered).
-- A `searchlight_compare_to_benchmark` workflow tool that runs events and benchmarks together.
+- Parsing `attributionDetail` into columns (gclid, utm_*, keyword, adGroup, trackingNumber) as
+  an export option.
+- A funnel/lead-quality report tool (customers by `adjustedType`, step rates, BNB by
+  `conversionReasonLost`).
+- MCP prompts for a monthly account review and a lead-quality review.
 
 ## Verified facts worth keeping
 

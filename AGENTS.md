@@ -27,3 +27,7 @@ bundled by esbuild into `server/index.cjs` with no shipped node_modules.
   `dependencies` into a tool schema; `tests/server.test.ts` enforces both.
 - `SearchLightClient.preflight` refuses requests the API is certain to reject before sending
   them, because every rejection still counts against the hourly rate limit.
+- Typed tools get their organization and accounts from `resolveScope` (`src/context.ts`),
+  never `resolveOrganization` alone. Since 2026-09-21 the API 404s an account key in the path
+  unless that account is its own organization, and any account outside the path's org;
+  `src/scope.ts` reroutes or refuses those locally.

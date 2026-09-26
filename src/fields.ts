@@ -208,3 +208,35 @@ const byName = new Map(STATIC_FIELDS.map((f) => [f.name, f]));
 export function staticField(name: string): FieldInfo | undefined {
   return byName.get(name);
 }
+
+/**
+ * How to read the core metrics without the common misreads, condensed from
+ * the "Interpreting the core metrics" section of the metrics reference
+ * (docs.searchlightdigital.io/api/metrics, read 2026-09-26).
+ */
+export const METRIC_GUIDE: Record<string, string> = {
+  leads:
+    "Unique people, counted once each. conversions counts every call and form (one person calling three times is 3 conversions, 1 lead); use leads when the question is about people.",
+  conversions: "Every call, chat, and form, not unique by person. Use leads for people.",
+  bookRate:
+    "The denominator is every tracked contact with no exclusions, so spam, wrong numbers, and out-of-area calls pull it down. Check unbookableConversions before blaming the CSRs, and expect it to read lower than a CRM book rate. Below 35% usually warrants a look; above 55% is strong.",
+  bookableUnbookedConversions:
+    "Real demand that didn't book, the most direct missed-revenue signal. The reason matters: a Planned Follow Up is pending revenue, no availability is a scheduling gap. Break it out by conversionReasonLost.",
+  roasClosed:
+    "Counts only closed, invoiced jobs, which post 2 to 4 weeks after the work. A drop in the current or just-finished month is usually lag, not performance. Meaningless for channels with no spend (Direct, Organic, AI). Compare to the same channel in prior periods; home-services paid search usually runs 4x to 10x.",
+  roasPotential: "Includes sold and estimated revenue, so it leads roasClosed. Meaningless for channels with no spend.",
+  avgTicket:
+    "Revenue per paying customer. Shifts with job mix (more small jobs pulls it down); check the job count alongside it before reading it as pricing.",
+  matchRate:
+    "A data-quality measure, not performance: the share of contacts SearchLight linked to an FSM job. A low value means revenue and ROAS are understated, often from missing phone numbers or a sync problem.",
+};
+
+/** Benchmark metrics where a lower value is the better one. */
+export const LOWER_IS_BETTER: ReadonlySet<string> = new Set([
+  "avgCostPerLead",
+  "avgCostPerPayingCustomer",
+  "avgCostPerBookedCustomer",
+  "customerCancelRate",
+  "cancelRate",
+  "avgCostPerConversion",
+]);

@@ -153,3 +153,40 @@ export function eventsRangeViolation(params: {
   if (days <= MAX_INTERVAL_DAYS) return null;
   return `Requested range spans ${days} days, exceeding SearchLight's ${MAX_INTERVAL_DAYS}-day attribution window. Pass interval=month, week, or day to split it, or shorten the range. Not sent, so it cost no API call.`;
 }
+
+/** Today's calendar date in the machine's local time zone, YYYY-MM-DD. */
+export function localToday(now: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/**
+ * The events date range matching a benchmarks `month`: the whole calendar
+ * month, the 1st through `today` for the current month, or for
+ * `previous-mtd` the prior month over the same elapsed days, with the end
+ * day clamped to that month's length. Future months are refused, as the
+ * benchmarks endpoint refuses them.
+ */
+export function monthWindow(month: string, today: string): DateWindow & { partial: boolean } {
+  const t = parseIsoDate(today, "today");
+  const td = new Date(t);
+  const currentStart = Date.UTC(td.getUTCFullYear(), td.getUTCMonth(), 1);
+  if (month === "previous-mtd") {
+    const start = Date.UTC(td.getUTCFullYear(), td.getUTCMonth() - 1, 1);
+    const end = Math.min(Date.UTC(td.getUTCFullYear(), td.getUTCMonth() - 1, td.getUTCDate()), addDays(currentStart, -1));
+    return { start: formatIsoDate(start), end: formatIsoDate(end), partial: true };
+  }
+  const m = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!m || Number(m[2]) < 1 || Number(m[2]) > 12) throw new DateError(`month must be YYYY-MM or previous-mtd, got "${month}".`);
+  const start = Date.UTC(Number(m[1]), Number(m[2]) - 1, 1);
+  if (start > currentStart) throw new DateError(`${month} is in the future.`);
+  if (start === currentStart) return { start: formatIsoDate(start), end: today, partial: true };
+  return { start: formatIsoDate(start), end: formatIsoDate(addDays(startOfNextMonth(start), -1)), partial: false };
+}
+
+/** The window of the same length that ends the day before `start`. */
+export function precedingWindow(start: string, end: string): DateWindow {
+  const days = daysInclusive(start, end);
+  const s = parseIsoDate(start, "start");
+  return { start: formatIsoDate(addDays(s, -days)), end: formatIsoDate(addDays(s, -1)) };
+}

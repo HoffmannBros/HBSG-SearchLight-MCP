@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { fetchEventsChunked, type EventsQuery } from "../chunking.js";
 import type { AppContext } from "../context.js";
-import { resolveOrganization } from "../context.js";
+import { resolveScope } from "../context.js";
 import { RowSpool, sanitizeFilename, type Row } from "../csv.js";
 import { DateError, MAX_INTERVAL_DAYS, daysInclusive, type Interval } from "../dates.js";
 import { filtersToParams, type Filters } from "../filters.js";
@@ -73,14 +73,15 @@ async function prepare(ctx: AppContext, args: EventsArgs): Promise<Prepared> {
     );
   }
   const extraParams = filtersToParams(args.filters as Filters | undefined, args.filter);
-  const organization = await resolveOrganization(ctx, args.organization);
+  const scope = await resolveScope(ctx, args.organization, pickAccounts(args.account, args.accounts));
+  notes.push(...scope.notes);
   const query: EventsQuery = {
-    organization,
+    organization: scope.organization,
     fields: args.fields,
     start: args.start,
     end: args.end,
     interval,
-    accounts: pickAccounts(args.account, args.accounts),
+    accounts: scope.accounts,
     extraParams,
   };
   const columns = [...(interval === "total" ? [] : ["start", "end"]), ...args.fields];

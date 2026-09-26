@@ -31,6 +31,8 @@ Spend, leads, and cost per lead by account for last month.
 ROAS by campaign for the last 90 days, Google Ads only.
 Export the last 12 months of spend, leads, and revenue potential by account and month to CSV.
 How does our booking rate compare to the industry for last month?
+Where does each account stand against the industry on cost per lead and ROAS this month?
+Compare August to July by campaign: spend, leads, and ROAS, biggest movers first.
 What are SearchLight's latest action items for our accounts?
 ```
 
@@ -46,6 +48,8 @@ What are SearchLight's latest action items for our accounts?
 | `searchlight_export_benchmarks_csv` | Benchmarks for many months in one file |
 | `searchlight_get_insights` | AI-generated action items and insights, with priority, impact, and evidence |
 | `searchlight_export_insights_csv` | Insight items flattened to CSV, or raw JSON |
+| `searchlight_compare_to_benchmark` | Each account's month next to the industry figure and p10 to p90 range, with a standing that knows lower is better for costs |
+| `searchlight_compare_periods` | One events query over two date ranges, joined on dimensions, with change and percent change |
 | `searchlight_api_call` | Any SearchLight API path directly, for anything new |
 
 All tools are read-only.
@@ -81,6 +85,11 @@ every tool against the real API and writes files to `smoke-output/`:
 npm run smoke
 ```
 
+`npm run probe` checks the live API against what the extension assumes: it diffs the `/api`
+field dictionary and endpoint parameters against the bundled reference, confirms the
+organization-path and error-code behavior, and records the live insights shape. It uses
+about 8 requests and writes a report to `smoke-output/probe-<date>.md`.
+
 ### Release
 
 1. Bump `version` in `package.json`, `manifest.json`, and `src/version.ts` (they must match).
@@ -112,8 +121,10 @@ bundled Node. Layout:
 | `src/dates.ts` | Interval boundaries (calendar months, Monday weeks, days) and window halving |
 | `src/csv.ts` | Streaming JSONL spool to CSV writer |
 | `src/filters.ts` | Filter expression encoding |
-| `src/fields.ts` | Bundled dimension and metric reference |
-| `src/tools/` | The nine MCP tools |
+| `src/fields.ts` | Bundled dimension and metric reference, and the metric reading guide |
+| `src/scope.ts` | Checks organization and account keys against `/api` before a request is sent |
+| `src/compare.ts` | Benchmark standing and two-period join logic |
+| `src/tools/` | The eleven MCP tools |
 | `scripts/pack.sh` | Release packaging with checks |
 
 Configuration reaches the server as environment variables: `SEARCHLIGHT_API_KEY`,

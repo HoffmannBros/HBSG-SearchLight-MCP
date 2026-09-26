@@ -189,7 +189,7 @@ export class SearchLightClient {
    * ahead of the key check so a malformed range is reported as such rather
    * than as a configuration problem.
    */
-  private preflight(path: string, params: QueryParams): void {
+  preflight(path: string, params: QueryParams): void {
     if (!isEventsPath(path)) return;
     const violation = eventsRangeViolation(params);
     if (violation) throw new DateError(violation);

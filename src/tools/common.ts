@@ -9,7 +9,7 @@ export const organizationArg = z
   .string()
   .optional()
   .describe(
-    "Organization key, or an account key as a shortcut. Omit to use the configured default, or the only organization this key can reach. Call searchlight_list_access to see the options.",
+    "Organization key. Omit to use the configured default, or the only organization this key can reach. To narrow to one account, use account/accounts rather than putting the account key here (an account key given here is rerouted through its organization). Call searchlight_list_access to see the options.",
   );
 
 export const accountArg = z.string().optional().describe("Restrict to one account key.");

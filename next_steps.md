@@ -30,7 +30,7 @@ Approved plan: `~/.claude/plans/i-want-to-build-spicy-walrus.md` (copy of the de
 | Reinstall `dist/hbsg-searchlight-1.0.1.mcpb` in Claude Desktop | not started (Justin double-clicks it) |
 | Windows check by a teammate | not started |
 | Tag `v1.0.1` pushed to origin | done, points at `3b20969` |
-| GitHub Release v1.0.1 with the .mcpb attached | not started |
+| GitHub Release v1.0.1 with the .mcpb attached | skipped; superseded by the v1.1.0 release |
 | **v1.1.0: strict-path fix, 2 compare tools, probe script, metric guide (2026-09-26)** | **done: merged to `main`, tag `v1.1.0`; 132 tests + pack pass; probe, smoke, and Claude Desktop verified 2026-09-28** |
 | `npm run probe` and `npm run smoke` against the real API for 1.1.0 | done 2026-09-28 on Windows, both pass |
 
@@ -197,7 +197,8 @@ Compare tools checked by hand: `compare_to_benchmark` bands and direction are ri
 0. v1.1.0 is done: Justin installed the 1.1.0 .mcpb in Claude Desktop on 2026-09-28 and both
    compare questions ("How did each account do against the industry last month?", "Compare
    last 30 days to the 30 before by campaign") worked. Fast-forwarded to `main`, tagged
-   `v1.1.0`. Optional: a GitHub Release with `dist/hbsg-searchlight-1.1.0.mcpb` attached.
+   `v1.1.0`. GitHub Release v1.1.0 published 2026-09-28 with the .mcpb attached, marked Latest
+   (1.0.1 was never released, so its fix is listed in the 1.1.0 notes).
    Windows note: `npm run pack` needs Git Bash (PowerShell has no `bash` on PATH).
 
 1. Justin installs `dist/hbsg-searchlight-1.0.1.mcpb` in Claude Desktop (replacing 1.0.0) and

@@ -40,7 +40,8 @@ function text(result: Awaited<ReturnType<Client["callTool"]>>): string {
 
 async function call(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
   const started = Date.now();
-  const result = await client.callTool({ name, arguments: args });
+  // Benchmarks can take ~50 s server-side; the SDK's 60 s default request timeout is too tight.
+  const result = await client.callTool({ name, arguments: args }, undefined, { timeout: 300_000 });
   const ms = Date.now() - started;
   const body = text(result);
   console.log(`\n=== ${name} ${JSON.stringify(args)} (${ms} ms)${result.isError ? " ERROR" : ""}`);

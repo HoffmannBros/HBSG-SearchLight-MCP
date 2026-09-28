@@ -2,7 +2,7 @@
 
 Handoff state for HBSG-SearchLight-MCP.
 
-**Last updated:** 2026-09-26 (v1.1.0 on branch `claude/api-tools-features-5duu12`, not merged or tagged)
+**Last updated:** 2026-09-28 (v1.1.0 on branch `claude/api-tools-features-5duu12`, live-verified on Windows; not merged or tagged)
 
 ## Goal
 
@@ -32,7 +32,7 @@ Approved plan: `~/.claude/plans/i-want-to-build-spicy-walrus.md` (copy of the de
 | Tag `v1.0.1` pushed to origin | done, points at `3b20969` |
 | GitHub Release v1.0.1 with the .mcpb attached | not started |
 | **v1.1.0: strict-path fix, 2 compare tools, probe script, metric guide (2026-09-26)** | **done on branch, 123 tests + pack pass; not live-verified** |
-| `npm run probe` and `npm run smoke` against the real API for 1.1.0 | not started (needs Justin's key; the cloud session could not reach SearchLight) |
+| `npm run probe` and `npm run smoke` against the real API for 1.1.0 | done 2026-09-28 on Windows, both pass |
 
 `v1.0.0` was tagged and released with its .mcpb attached (0 downloads). That build cannot run
 any of the three export tools, so v1.0.1 should replace it as the latest release before
@@ -150,14 +150,38 @@ What shipped on the branch:
   only against a local fake server.
 - `npm run smoke` now also calls both compare tools and checks the account-key reroute.
 
+## v1.1.0 live check (2026-09-28, Windows)
+
+`npm run probe` passed (7 requests, report in `smoke-output/probe-2026-09-28.md`):
+
+- Strict paths confirmed: an account key in the path returns 404 `inaccessible-organization`
+  (not `inaccessible-accounts`); an account outside the org returns 404 `inaccessible-accounts`.
+- 400 codes seen: `missing-metric`, `unknown-interval`, `missing-range`. Candidates for
+  `SearchLightClient.preflight`.
+- Live dictionary 121 fields vs 92 bundled; 29 live-only (e.g. `accountName`, `conversionType`,
+  `source`, `campaignSpend`, `expectedValue`, Google Ads `clicks`/`impressions`/`cost`/
+  `searchImpressionShare`). Nothing bundled is missing live, no type mismatches, benchmarks and
+  endpoint parameters match. Dictionary entries now carry `preferredDirection`, which could
+  replace the hand-kept `LOWER_IS_BETTER`.
+- Insights: 27 flat items, kinds `action_item` and `insight`.
+
+`npm run smoke` passed after one fix: benchmarks took 48 s for a single month when timed with
+curl, so the smoke client's SDK-default 60 s request timeout tripped. `scripts/smoke.ts` now passes
+`timeout: 300_000` to `callTool`. The 3-month benchmarks export took 90 s and 7 API calls
+(retries on 503/504). Claude Desktop's own tool-call timeout has not been checked against this.
+
+Compare tools checked by hand: `compare_to_benchmark` bands and direction are right
+(avgCostPerLead above p75 reads "bottom 25%"); `compare_periods` defaults to the preceding
+30 days; the `blue-sky-plumbing` reroute returns the same spend/leads as the org-level row.
+
 ## Next actions, in order
 
-0. On the Mac or Windows clone, check out `claude/api-tools-features-5duu12`, then run
-   `npm run probe` and `npm run smoke`. Paste the probe report into the next session: it
-   drives a `src/fields.ts` refresh (the live dictionary had 121 fields vs 92 bundled) and
-   tells us which 400 codes are worth adding to `SearchLightClient.preflight`. Then install
-   `dist/hbsg-searchlight-1.1.0.mcpb` in place of 1.0.1 and ask it "How did each account do
-   against the industry last month?" and "Compare last 30 days to the 30 before by campaign".
+0. Refresh `src/fields.ts` from the probe report (29 live-only fields; consider driving
+   direction from `preferredDirection`) and add the three 400 codes to preflight. Then
+   `npm run pack`, install `dist/hbsg-searchlight-1.1.0.mcpb` in place of 1.0.1, and ask it
+   "How did each account do against the industry last month?" and "Compare last 30 days to
+   the 30 before by campaign". Watch whether slow benchmarks calls time out in Desktop.
+   Then merge the branch to `main` and tag.
 
 1. Justin installs `dist/hbsg-searchlight-1.0.1.mcpb` in Claude Desktop (replacing 1.0.0) and
    confirms `searchlight_export_events_csv` now runs, with the file landing in

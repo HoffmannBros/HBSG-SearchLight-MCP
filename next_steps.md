@@ -2,7 +2,7 @@
 
 Handoff state for HBSG-SearchLight-MCP.
 
-**Last updated:** 2026-09-28 (v1.1.0 on branch `claude/api-tools-features-5duu12`, live-verified on Windows; not merged or tagged)
+**Last updated:** 2026-09-28 (v1.1.0 merged to `main` and tagged `v1.1.0`)
 
 ## Goal
 
@@ -31,7 +31,7 @@ Approved plan: `~/.claude/plans/i-want-to-build-spicy-walrus.md` (copy of the de
 | Windows check by a teammate | not started |
 | Tag `v1.0.1` pushed to origin | done, points at `3b20969` |
 | GitHub Release v1.0.1 with the .mcpb attached | not started |
-| **v1.1.0: strict-path fix, 2 compare tools, probe script, metric guide (2026-09-26)** | **done on branch, 123 tests + pack pass; not live-verified** |
+| **v1.1.0: strict-path fix, 2 compare tools, probe script, metric guide (2026-09-26)** | **done: merged to `main`, tag `v1.1.0`; 132 tests + pack pass; probe, smoke, and Claude Desktop verified 2026-09-28** |
 | `npm run probe` and `npm run smoke` against the real API for 1.1.0 | done 2026-09-28 on Windows, both pass |
 
 `v1.0.0` was tagged and released with its .mcpb attached (0 downloads). That build cannot run
@@ -194,10 +194,11 @@ Compare tools checked by hand: `compare_to_benchmark` bands and direction are ri
 
 ## Next actions, in order
 
-0. `npm run pack`, install `dist/hbsg-searchlight-1.1.0.mcpb` in place of 1.0.1, and ask it
-   "How did each account do against the industry last month?" and "Compare last 30 days to
-   the 30 before by campaign". Watch whether slow benchmarks calls time out in Desktop.
-   Then merge the branch to `main` and tag.
+0. v1.1.0 is done: Justin installed the 1.1.0 .mcpb in Claude Desktop on 2026-09-28 and both
+   compare questions ("How did each account do against the industry last month?", "Compare
+   last 30 days to the 30 before by campaign") worked. Fast-forwarded to `main`, tagged
+   `v1.1.0`. Optional: a GitHub Release with `dist/hbsg-searchlight-1.1.0.mcpb` attached.
+   Windows note: `npm run pack` needs Git Bash (PowerShell has no `bash` on PATH).
 
 1. Justin installs `dist/hbsg-searchlight-1.0.1.mcpb` in Claude Desktop (replacing 1.0.0) and
    confirms `searchlight_export_events_csv` now runs, with the file landing in

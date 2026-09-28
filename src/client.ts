@@ -1,5 +1,6 @@
 import { setTimeout as sleepFor } from "node:timers/promises";
-import { DateError, eventsRangeViolation, isEventsPath } from "./dates.js";
+import { DateError, eventsParamsViolation, isEventsPath } from "./dates.js";
+import { staticField } from "./fields.js";
 
 export interface DictionaryEntry {
   displayName?: string;
@@ -64,6 +65,26 @@ export class SearchLightApiError extends Error {
 
 export class SearchLightConfigError extends Error {
   override name = "SearchLightConfigError";
+}
+
+/** A request refused locally because the API would certainly reject it. */
+export class PreflightError extends Error {
+  override name = "PreflightError";
+}
+
+/**
+ * The events endpoint rejects `fields` with no metric it accepts (400
+ * missing-metric). Only refuses when every field is in the bundled reference
+ * and none is a queryable metric, so a name the reference does not know is
+ * left for the API to judge.
+ */
+export function metriclessFieldsViolation(fields: unknown): string | null {
+  if (typeof fields !== "string") return null;
+  const names = fields.split(",").map((f) => f.trim()).filter(Boolean);
+  if (names.length === 0) return null;
+  const known = names.map((n) => staticField(n));
+  if (known.some((f) => !f || (f.type === "metric" && !f.dictionaryOnly))) return null;
+  return `fields must include at least one metric the events endpoint accepts; none of ${names.join(", ")} is one. Add a metric such as leads or spend (searchlight_list_fields lists them). Not sent, so it cost no API call.`;
 }
 
 export interface ClientOptions {
@@ -191,8 +212,10 @@ export class SearchLightClient {
    */
   preflight(path: string, params: QueryParams): void {
     if (!isEventsPath(path)) return;
-    const violation = eventsRangeViolation(params);
+    const violation = eventsParamsViolation(params);
     if (violation) throw new DateError(violation);
+    const metricless = metriclessFieldsViolation(params.fields);
+    if (metricless) throw new PreflightError(metricless);
   }
 
   /** GET a JSON endpoint with retries, rate-limit handling, and concurrency control. */

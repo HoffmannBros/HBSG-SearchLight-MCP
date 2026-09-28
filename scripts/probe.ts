@@ -29,7 +29,12 @@ if (!apiKey) {
   process.exit(2);
 }
 
-const client = new SearchLightClient({
+/** The probe sends requests preflight would refuse, to record what the API itself says. */
+class UncheckedClient extends SearchLightClient {
+  override preflight(): void {}
+}
+
+const client = new UncheckedClient({
   apiKey,
   baseUrl: (process.env.SEARCHLIGHT_BASE_URL || env.SEARCHLIGHT_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, ""),
   concurrency: 1,

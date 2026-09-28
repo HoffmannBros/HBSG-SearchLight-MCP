@@ -66,7 +66,10 @@ export function benchmarkStanding(
   return { band, standing, vsBenchmark: bench ? value / bench : null };
 }
 
-export function isLowerBetter(metric: string): boolean {
+/** The live dictionary's `preferredDirection` wins; the bundled directions cover its absence. */
+export function isLowerBetter(metric: string, dictionary?: Record<string, DictionaryEntry>): boolean {
+  const live = dictionary?.[metric]?.preferredDirection;
+  if (typeof live === "string") return live === "down";
   return LOWER_IS_BETTER.has(metric);
 }
 

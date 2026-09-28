@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { SearchLightApiError, SearchLightClient, SearchLightConfigError, Semaphore } from "../src/client.js";
+import { PreflightError, SearchLightApiError, SearchLightClient, SearchLightConfigError, Semaphore } from "../src/client.js";
 import { DateError } from "../src/dates.js";
 
 type Handler = (url: string, init: RequestInit) => Response | Promise<Response>;
@@ -36,9 +36,15 @@ function makeClient(handler: Handler, overrides: Partial<ConstructorParameters<t
 describe("SearchLightClient.get", () => {
   it("sends the raw key in Authorization and encodes params", async () => {
     const { client, calls } = makeClient(() => jsonResponse([{ spend: 1 }]));
-    const data = await client.get("/api/acme/events", { fields: "spend", start: "2026-05-01", end: undefined, interval: "week" });
+    const data = await client.get("/api/acme/events", {
+      fields: "spend",
+      start: "2026-05-01",
+      end: "2026-05-31",
+      account: undefined,
+      interval: "week",
+    });
     expect(data).toEqual([{ spend: 1 }]);
-    expect(calls[0]?.url).toBe("https://example.test/api/acme/events?fields=spend&start=2026-05-01&interval=week");
+    expect(calls[0]?.url).toBe("https://example.test/api/acme/events?fields=spend&start=2026-05-01&end=2026-05-31&interval=week");
     const headers = calls[0]?.init.headers as Record<string, string>;
     expect(headers.Authorization).toBe("sl_test");
     expect(client.requestCount).toBe(1);
@@ -94,7 +100,9 @@ describe("SearchLightClient.get", () => {
 
   it("does not retry 400 or 404", async () => {
     const { client } = makeClient(() => jsonResponse({ error: "Unknown organization" }, 404));
-    const err = (await client.get("/api/nope/events").catch((e: unknown) => e)) as SearchLightApiError;
+    const err = (await client
+      .get("/api/nope/events", { fields: "spend", start: "2026-05-01", end: "2026-05-01" })
+      .catch((e: unknown) => e)) as SearchLightApiError;
     expect(err.status).toBe(404);
     expect(err.hint).toMatch(/searchlight_list_access/);
     expect(client.requestCount).toBe(1);
@@ -218,5 +226,47 @@ describe("Semaphore", () => {
       ),
     );
     expect(peak).toBe(2);
+  });
+});
+
+describe("events request pre-flight", () => {
+  const refused = async (params: Record<string, string | undefined>) => {
+    const { client, calls } = makeClient(() => jsonResponse([]));
+    const err = await client.get("/api/acme/events", params).catch((e: unknown) => e);
+    expect(calls).toHaveLength(0);
+    expect(client.requestCount).toBe(0);
+    return err as Error;
+  };
+
+  it("refuses a missing start or end (400 missing-range)", async () => {
+    for (const params of [{ fields: "spend", start: "2026-05-01" }, { fields: "spend", end: "2026-05-01" }, { fields: "spend" }]) {
+      const err = await refused(params);
+      expect(err).toBeInstanceOf(DateError);
+      expect(err.message).toMatch(/both start and end/);
+    }
+  });
+
+  it("refuses an unknown interval (400 unknown-interval)", async () => {
+    const err = await refused({ fields: "spend", start: "2026-05-01", end: "2026-05-01", interval: "fortnight" });
+    expect(err).toBeInstanceOf(DateError);
+    expect(err.message).toMatch(/Unknown interval "fortnight"/);
+  });
+
+  it("refuses fields that are all bundled dimensions (400 missing-metric)", async () => {
+    const err = await refused({ fields: "account,campaign", start: "2026-05-01", end: "2026-05-01" });
+    expect(err).toBeInstanceOf(PreflightError);
+    expect(err.message).toMatch(/at least one metric/);
+  });
+
+  it("does not count dictionary-only metrics such as clicks", async () => {
+    const err = await refused({ fields: "campaign,clicks", start: "2026-05-01", end: "2026-05-01" });
+    expect(err).toBeInstanceOf(PreflightError);
+  });
+
+  it("leaves unknown field names and non-events paths to the API", async () => {
+    const { client, calls } = makeClient(() => jsonResponse([]));
+    await client.get("/api/acme/events", { fields: "account,someNewMetric", start: "2026-05-01", end: "2026-05-01" });
+    await client.get("/api/acme/benchmarks", { fields: "account", month: "2026-05" });
+    expect(calls).toHaveLength(2);
   });
 });

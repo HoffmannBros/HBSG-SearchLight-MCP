@@ -82,6 +82,8 @@ export function registerCompareTools(server: McpServer, ctx: AppContext): void {
       const scope = await resolveScope(ctx, args.organization, pickAccounts(args.account, args.accounts));
       const benchParams = benchmarkParams([...(dim ? [dim] : []), ...metrics], args.filters, scope.accounts);
       const notes = [...scope.notes];
+      // resolveScope just loaded /api, so this is the cached copy.
+      const dictionary = (await ctx.client.getAccess().catch(() => undefined))?.dictionary;
 
       const needSpend = metrics.some((m) => SPEND_BASED.has(m));
       const eventFields = [
@@ -146,7 +148,7 @@ export function registerCompareTools(server: McpServer, ctx: AppContext): void {
           if (noSpend && SPEND_BASED.has(m)) {
             standing = "n/a (no spend)";
           } else if (value !== null) {
-            const s = benchmarkStanding(value, dist, isLowerBetter(m));
+            const s = benchmarkStanding(value, dist, isLowerBetter(m, dictionary));
             if (s) ({ band, standing, vsBenchmark: vs } = s);
           }
           rows.push({

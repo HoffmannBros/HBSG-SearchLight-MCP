@@ -174,11 +174,27 @@ Compare tools checked by hand: `compare_to_benchmark` bands and direction are ri
 (avgCostPerLead above p75 reads "bottom 25%"); `compare_periods` defaults to the preceding
 30 days; the `blue-sky-plumbing` reroute returns the same spend/leads as the org-level row.
 
+### Field refresh and preflight (2026-09-28, same session)
+
+- `src/fields.ts` now bundles all 121 live fields (probe re-run: "Live 121, bundled 121").
+  Each metric carries the live `preferredDirection`; `LOWER_IS_BETTER` is derived from it,
+  and `isLowerBetter` prefers the live dictionary's value when `/api` is cached. The live
+  "down" set adds `avgConversionsPerLead`, `canceledCustomers`, `unbookableConversions`,
+  `bookableUnbookedConversions` to the old hand-kept list.
+- 10 dictionary metrics are on no endpoint's field list and the events endpoint's
+  `missing-metric` error omits them: Google Ads `clicks`, `impressions`, `cost`,
+  `allConversions`, `searchImpressionShare`, `searchLostIsBudget`, `searchLostIsRank`, plus
+  `campaignSpend`, `expectedValue`, `opportunityAgents`. They are bundled with
+  `dictionaryOnly: true`; `list_fields` shows "none (not queryable yet)" for them. Re-check
+  in a later probe; they may be headed for a new endpoint.
+- `INSIGHT_FIELDS` gained `client_slug`, `last_material_change`, `refreshed_this_run`.
+- Preflight on events now also refuses a missing start or end, an unknown interval, and
+  `fields` with no queryable metric (only when every name is in the bundled reference).
+  `scripts/probe.ts` uses a client with preflight disabled so it still records the API's codes.
+
 ## Next actions, in order
 
-0. Refresh `src/fields.ts` from the probe report (29 live-only fields; consider driving
-   direction from `preferredDirection`) and add the three 400 codes to preflight. Then
-   `npm run pack`, install `dist/hbsg-searchlight-1.1.0.mcpb` in place of 1.0.1, and ask it
+0. `npm run pack`, install `dist/hbsg-searchlight-1.1.0.mcpb` in place of 1.0.1, and ask it
    "How did each account do against the industry last month?" and "Compare last 30 days to
    the 30 before by campaign". Watch whether slow benchmarks calls time out in Desktop.
    Then merge the branch to `main` and tag.

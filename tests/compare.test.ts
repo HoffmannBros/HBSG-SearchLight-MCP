@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { benchmarkStanding, classifyFields, joinPeriods, joinedColumns, sortByChange } from "../src/compare.js";
+import { benchmarkStanding, classifyFields, isLowerBetter, joinPeriods, joinedColumns, sortByChange } from "../src/compare.js";
+import { LOWER_IS_BETTER, METRICS, STATIC_FIELDS } from "../src/fields.js";
 
 const dist = { benchmark: 0.4, p10: 0.2, p25: 0.3, p50: 0.4, p75: 0.5, p90: 0.6 };
 
@@ -82,5 +83,31 @@ describe("joinPeriods", () => {
     expect(joinedColumns(["account"], ["spend"])).toEqual(["account", "spend", "spend_prev", "spend_change", "spend_pct"]);
     const rows = sortByChange(joinPeriods(cur, prev, ["account", "campaign"], ["spend"]), "spend");
     expect(rows.map((r) => r.spend_change)).toEqual([20, null, null]);
+  });
+});
+
+describe("isLowerBetter", () => {
+  it("follows the live preferredDirection when the dictionary has one", () => {
+    expect(isLowerBetter("avgCostPerLead", { avgCostPerLead: { preferredDirection: "up" } })).toBe(false);
+    expect(isLowerBetter("bookRate", { bookRate: { preferredDirection: "down" } })).toBe(true);
+  });
+
+  it("falls back to the bundled directions", () => {
+    expect(isLowerBetter("avgCostPerLead")).toBe(true);
+    expect(isLowerBetter("bookableUnbookedConversions", {})).toBe(true);
+    expect(isLowerBetter("bookRate")).toBe(false);
+    expect(isLowerBetter("spend")).toBe(false);
+  });
+});
+
+describe("bundled field reference", () => {
+  it("matches the live dictionary size as of the 2026-09-28 probe", () => {
+    expect(STATIC_FIELDS).toHaveLength(121);
+    expect(new Set(STATIC_FIELDS.map((f) => f.name)).size).toBe(121);
+  });
+
+  it("gives every lower-is-better metric a down direction", () => {
+    expect([...LOWER_IS_BETTER].sort()).toEqual(METRICS.filter((m) => m.direction === "down").map((m) => m.name).sort());
+    expect(LOWER_IS_BETTER.has("canceledCustomers")).toBe(true);
   });
 });

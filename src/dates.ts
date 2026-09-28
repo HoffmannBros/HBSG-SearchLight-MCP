@@ -154,6 +154,26 @@ export function eventsRangeViolation(params: {
   return `Requested range spans ${days} days, exceeding SearchLight's ${MAX_INTERVAL_DAYS}-day attribution window. Pass interval=month, week, or day to split it, or shorten the range. Not sent, so it cost no API call.`;
 }
 
+/**
+ * Everything about an events request's dates the API is certain to reject:
+ * a missing start or end (400 missing-range), an interval it does not know
+ * (400 unknown-interval), then the attribution window. Returns the message to
+ * fail with, or null.
+ */
+export function eventsParamsViolation(params: { start?: unknown; end?: unknown; interval?: unknown }): string | null {
+  const present = (v: unknown) => v !== undefined && v !== null && String(v).trim() !== "";
+  if (params.interval !== undefined && params.interval !== null) {
+    const interval = String(params.interval);
+    if (!(INTERVALS as readonly string[]).includes(interval)) {
+      return `Unknown interval "${interval}". Use one of ${INTERVALS.join(", ")}. Not sent, so it cost no API call.`;
+    }
+  }
+  if (!present(params.start) || !present(params.end)) {
+    return "The events endpoint needs both start and end (YYYY-MM-DD). Not sent, so it cost no API call.";
+  }
+  return eventsRangeViolation(params);
+}
+
 /** Today's calendar date in the machine's local time zone, YYYY-MM-DD. */
 export function localToday(now: Date = new Date()): string {
   const pad = (n: number) => String(n).padStart(2, "0");

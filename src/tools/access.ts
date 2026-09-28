@@ -25,6 +25,7 @@ function endpointsFor(name: string, type: string, endpoints: EndpointInfo[] | un
       .filter((e) => (e.metrics ?? []).includes(name) || (e.dimensions ?? []).includes(name))
       .map((e) => e.endpoint);
   }
+  if (staticField(name)?.dictionaryOnly) return [];
   const out = ["events"];
   const benchmarkNames: readonly string[] = type === "metric" ? BENCHMARK_METRICS : BENCHMARK_DIMENSIONS;
   if (benchmarkNames.includes(name)) out.push("benchmarks");
@@ -130,7 +131,7 @@ export function registerAccessTools(server: McpServer, ctx: AppContext): void {
         type: f.type,
         definition: f.definition,
         format: f.format ?? "",
-        endpoints: f.endpoints.join("/"),
+        endpoints: f.endpoints.join("/") || "none (not queryable yet)",
         values: f.values ? f.values.join(" | ") : "",
       }));
       const guide = Object.fromEntries(fields.filter((f) => METRIC_GUIDE[f.name]).map((f) => [f.name, METRIC_GUIDE[f.name]!]));

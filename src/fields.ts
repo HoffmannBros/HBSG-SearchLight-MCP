@@ -1,11 +1,16 @@
 /**
  * Static reference of SearchLight dimensions and metrics, transcribed from
  * https://docs.searchlightdigital.io/api/dimensions/ and /api/metrics/ on
- * 2026-09-02. The live `/api` dictionary is preferred at runtime; this list
- * is the fallback and also powers descriptions when the API is unreachable.
+ * 2026-09-02 and brought in line with the live `/api` dictionary on
+ * 2026-09-28 (`npm run probe`). The live dictionary is preferred at runtime;
+ * this list is the fallback and also powers descriptions when the API is
+ * unreachable.
  */
 
 export type FieldType = "dimension" | "metric";
+
+/** The live dictionary's `preferredDirection`: which way a metric improves. */
+export type Direction = "up" | "down" | "neutral";
 
 export interface FieldInfo {
   name: string;
@@ -16,6 +21,13 @@ export interface FieldInfo {
   values?: string[];
   /** Requires the lead-grading subscription; other accounts return 0 or empty. */
   leadGrading?: boolean;
+  /** Metrics only: which way is better, from the live dictionary. Absent when it gives none. */
+  direction?: Direction;
+  /**
+   * In the live dictionary but on no endpoint's field list (2026-09-28), so a
+   * request for it is rejected. Kept so definitions still show offline.
+   */
+  dictionaryOnly?: boolean;
 }
 
 const dim = (
@@ -35,6 +47,8 @@ const met = (
 export const DIMENSIONS: FieldInfo[] = [
   dim("account", "Account", "Business or brand display name, e.g. Example Home Services"),
   dim("accountKey", "Account", "Unique account identifier, e.g. example-home-services"),
+  dim("accountName", "Account", "Business, brand, or entity providing services"),
+  dim("accountIndex", "Account", "Account identifier local to the returned dataset only"),
   dim("attributionCategory", "Attribution", "Top-level source classification", {
     values: ["Advertising", "Organic", "Other"],
   }),
@@ -42,22 +56,36 @@ export const DIMENSIONS: FieldInfo[] = [
   dim("attributionDetail", "Attribution", "Raw referrer information used for attribution"),
   dim("campaign", "Attribution", "Marketing campaign credited for the customer, e.g. Search - Branded"),
   dim("opportunityJobCampaign", "Attribution", "Campaign reported by the CRM at the customer level"),
+  dim("attributionDropDate", "Attribution", "Date a direct mail piece is attributed to a customer and released for delivery"),
+  dim("conversionAttribution", "Conversion", "Attribution of the conversion event"),
+  dim("conversionCategory", "Conversion", "Referral category of the conversion event"),
+  dim("conversionChannel", "Conversion", "Referral channel of the conversion event"),
+  dim("conversionCampaign", "Conversion", "Campaign of the conversion event"),
+  dim("conversionType", "Conversion", "Type of conversion, e.g. form, phone"),
+  dim("conversionDropDate", "Conversion", "Date a direct mail provider released the mail piece for delivery"),
+  dim("source", "Conversion", "Original source, platform, or system that created the conversion"),
+  dim("agent", "Conversion", "CSR associated with the conversion"),
+  dim("detail", "Conversion", "Unstructured information about the lead from the source system"),
   dim("opportunitySource", "Customer", "Lead creation platform, e.g. service-titan-call, what-converts"),
   dim("opportunityType", "Customer", "Lead medium", { values: ["phone", "chat", "form"] }),
   dim("customerStatus", "Customer", "Customer relationship stage", { values: ["New", "Existing", "Unmatched"] }),
   dim("businessUnit", "Customer", "Business unit from the source CRM, e.g. HVAC - Residential - Service"),
   dim("normalizedBusinessUnit", "Customer", "Standardized business unit grouping, e.g. HVAC, Plumbing"),
   dim("opportunityAgent", "Customer", "CSR associated with the customer"),
+  dim("customerName", "Customer", "Customer name from the FSM when matched, otherwise from the lead"),
   dim("technician", "Customer", "Technician who delivered the service"),
   dim("zip", "Customer", "Customer ZIP code"),
   dim("opportunityId", "Customer", "Unique customer identifier"),
   dim("sourceId", "Customer", "Customer identifier in the source system"),
+  dim("opportunitySourceId", "Customer", "Source ID attributed to the opportunity"),
+  dim("eventId", "Customer", "Unique event identifier"),
   dim("customerEmail", "Customer", "Customer email address"),
   dim("customerPhone", "Customer", "Customer phone number"),
   dim("adjustedType", "Funnel", "Furthest funnel step the customer reached", {
     values: ["lead-originated", "booked", "estimated", "sold", "closed", "canceled"],
   }),
   dim("typeIsLast", "Funnel", "Boolean: whether this row reflects the customer's current state"),
+  dim("opportunityBooked", "Funnel", "Boolean: whether the customer eventually booked, including after the time frame"),
   dim("conversionDetailedLabel", "Lead grading", "Conversion bookability grade", {
     values: ["Bookable - Booked", "Bookable - Didn't Book", "Unbookable"],
     leadGrading: true,
@@ -74,6 +102,10 @@ export const DIMENSIONS: FieldInfo[] = [
     leadGrading: true,
   }),
   dim("conversionNeedsManagementReview", "Lead grading", "Boolean flag for manager review", { leadGrading: true }),
+  dim("conversionPlannedFollowUpSubcategory", "Lead grading", "Reason breakout for conversions marked Planned Follow Up", {
+    leadGrading: true,
+  }),
+  dim("conversionVersion", "Lead grading", "Version of SearchLight's lead grading model", { leadGrading: true }),
   dim("conversionOriginalDetailedLabel", "Lead grading", "Original grade before any update", { leadGrading: true }),
   dim("conversionOriginalIntent", "Lead grading", "Original intent before any update", { leadGrading: true }),
   dim("conversionOriginalReasonUnbookable", "Lead grading", "Original unbookable reason before any update", {
@@ -90,6 +122,7 @@ export const DIMENSIONS: FieldInfo[] = [
   dim("opportunityTranscript", "Lead grading", "Customer-level transcript (drilldown text)", { leadGrading: true }),
   dim("date", "Time", "Event date, YYYY-MM-DD"),
   dim("dateTime", "Time", "Event timestamp, ISO 8601 UTC"),
+  dim("createdDateTime", "Time", "Event creation timestamp, ISO 8601 UTC"),
   dim("week", "Time", "Calendar week starting Monday"),
   dim("month", "Time", "Calendar month"),
   dim("opportunityStartDate", "Time", "Customer origination date"),
@@ -108,6 +141,7 @@ export const METRICS: FieldInfo[] = [
   met("closedLeads", "Counts", "Leads that reached a closed state at least once"),
   met("opportunityCount", "Counts", "Distinct opportunities in the result"),
   met("customers", "Counts", "Distinct customers, by current state"),
+  met("opportunityAgents", "Counts", "Distinct CSRs who supported customers in the time frame"),
   met("bookedCustomers", "Counts", "Unique customers with an appointment booked in the period"),
   met("canceledCustomers", "Counts", "Unique customers with a cancellation in the period"),
   met("matchedCustomers", "Counts", "Customers matched to source-system activity"),
@@ -115,10 +149,12 @@ export const METRICS: FieldInfo[] = [
   met("payingCustomers", "Counts", "Customers whose current state is sold or closed"),
   met("total", "Revenue", "Total revenue value summed across events from the FSM"),
   met("spend", "Revenue", "Total ad spend, including management fees"),
+  met("campaignSpend", "Revenue", "Spend from ad providers and management fees across the populated digital channels"),
   met("estimatedRevenue", "Revenue", "Expected revenue of customers currently in the estimated state"),
   met("soldRevenue", "Revenue", "Expected revenue of customers currently in the sold state"),
   met("closedRevenue", "Revenue", "Closed and completed revenue of customers currently in the closed state"),
   met("revenuePotential", "Revenue", "Expected revenue across all customers: unsold estimates plus sold and closed revenue"),
+  met("expectedValue", "Revenue", "Revenue using the average rather than the sum of estimates per customer, so aggregates are not inflated"),
   met("avgConversionsPerLead", "Averages", "conversions / leads"),
   met("avgCostPerConversion", "Averages", "spend / conversions"),
   met("avgCostPerLead", "Averages", "spend / leads"),
@@ -145,7 +181,49 @@ export const METRICS: FieldInfo[] = [
   met("stepEstimateRate", "Funnel steps", "Of customers first booked in the period, the fraction eventually estimated"),
   met("stepSoldRate", "Funnel steps", "Of customers first estimated in the period, the fraction eventually sold"),
   met("stepCloseRate", "Funnel steps", "Of customers first sold in the period, the fraction eventually closed"),
+  met("clicks", "Google Ads", "Clicks, as reported by Google Ads"),
+  met("impressions", "Google Ads", "Impressions, as reported by Google Ads"),
+  met("cost", "Google Ads", "Cost, as reported by Google Ads"),
+  met("allConversions", "Google Ads", "Conversions, as reported by Google Ads (not SearchLight's conversions)"),
+  met("searchImpressionShare", "Google Ads", "Search impression share, as reported by Google Ads"),
+  met("searchLostIsBudget", "Google Ads", "Search impression share lost to budget, as reported by Google Ads"),
+  met("searchLostIsRank", "Google Ads", "Search impression share lost to rank, as reported by Google Ads"),
 ];
+
+/** `preferredDirection` per metric, from the live dictionary on 2026-09-28. */
+const DIRECTIONS: Record<string, Direction> = {
+  ...Object.fromEntries(
+    [
+      "conversions", "leads", "soldLeads", "closedLeads", "customers", "bookedCustomers", "matchedCustomers",
+      "payingCustomers", "total", "estimatedRevenue", "soldRevenue", "closedRevenue", "revenuePotential",
+      "expectedValue", "avgTicket", "bookRate", "matchRate", "payingCustomerRate", "roasPotential", "roasClosed",
+      "bookableConversions", "bookedConversions", "conversionQuality", "stepBookRate", "stepEstimateRate",
+      "stepSoldRate", "stepCloseRate",
+    ].map((m) => [m, "up" as const]),
+  ),
+  ...Object.fromEntries(
+    [
+      "avgConversionsPerLead", "avgCostPerConversion", "avgCostPerLead", "avgCostPerBookedCustomer",
+      "avgCostPerPayingCustomer", "canceledCustomers", "customerCancelRate", "cancelRate", "unbookableConversions",
+      "bookableUnbookedConversions",
+    ].map((m) => [m, "down" as const]),
+  ),
+  ...Object.fromEntries(
+    ["spend", "campaignSpend", "unmatchedCustomers", "opportunityAgents", "gradedConversions", "percentConversionsGraded"].map(
+      (m) => [m, "neutral" as const],
+    ),
+  ),
+};
+/** Dictionary metrics that no endpoint accepted on 2026-09-28. */
+const DICTIONARY_ONLY = new Set([
+  "clicks", "impressions", "cost", "allConversions", "searchImpressionShare", "searchLostIsBudget", "searchLostIsRank",
+  "campaignSpend", "expectedValue", "opportunityAgents",
+]);
+for (const m of METRICS) {
+  const direction = DIRECTIONS[m.name];
+  if (direction) m.direction = direction;
+  if (DICTIONARY_ONLY.has(m.name)) m.dictionaryOnly = true;
+}
 
 export const STATIC_FIELDS: FieldInfo[] = [...DIMENSIONS, ...METRICS];
 
@@ -173,7 +251,7 @@ export const BENCHMARK_DIMENSIONS = [
 
 /**
  * Keys of an insight item that `fields` can select (observed on the live API
- * 2026-09-02; the docs list a different, nested shape).
+ * 2026-09-02 and 2026-09-28; the docs list a different, nested shape).
  */
 export const INSIGHT_FIELDS = [
   "kind",
@@ -202,6 +280,9 @@ export const INSIGHT_FIELDS = [
   "graded_calls",
   "references",
   "future_investigation",
+  "client_slug",
+  "last_material_change",
+  "refreshed_this_run",
 ] as const;
 
 const byName = new Map(STATIC_FIELDS.map((f) => [f.name, f]));
@@ -231,12 +312,5 @@ export const METRIC_GUIDE: Record<string, string> = {
     "A data-quality measure, not performance: the share of contacts SearchLight linked to an FSM job. A low value means revenue and ROAS are understated, often from missing phone numbers or a sync problem.",
 };
 
-/** Benchmark metrics where a lower value is the better one. */
-export const LOWER_IS_BETTER: ReadonlySet<string> = new Set([
-  "avgCostPerLead",
-  "avgCostPerPayingCustomer",
-  "avgCostPerBookedCustomer",
-  "customerCancelRate",
-  "cancelRate",
-  "avgCostPerConversion",
-]);
+/** Metrics where a lower value is the better one, per the bundled directions. */
+export const LOWER_IS_BETTER: ReadonlySet<string> = new Set(METRICS.filter((m) => m.direction === "down").map((m) => m.name));

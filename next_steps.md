@@ -199,7 +199,9 @@ Compare tools checked by hand: `compare_to_benchmark` bands and direction are ri
    last 30 days to the 30 before by campaign") worked. Fast-forwarded to `main`, tagged
    `v1.1.0`. GitHub Release v1.1.0 published 2026-09-28 with the .mcpb attached, marked Latest
    (1.0.1 was never released, so its fix is listed in the 1.1.0 notes).
-   Windows note: `npm run pack` needs Git Bash (PowerShell has no `bash` on PATH).
+   Windows note: `npm run pack` runs from PowerShell since 2026-09-28, because the user npm
+   config sets `script-shell=C:\Program Files\Git\bin\bash.exe`. A machine without that
+   setting still needs Git Bash (`npm config set script-shell ...` fixes it).
 
 1. Justin installs `dist/hbsg-searchlight-1.0.1.mcpb` in Claude Desktop (replacing 1.0.0) and
    confirms `searchlight_export_events_csv` now runs, with the file landing in

@@ -18,6 +18,10 @@ CLAUDE.md
 .gitignore
 smoke-output/
 
+# Local data exports can hold customer details; never pack them.
+searchlight_*.csv
+*.csv
+
 # Pack output, so re-packs don't nest bundles.
 dist/
 *.mcpb

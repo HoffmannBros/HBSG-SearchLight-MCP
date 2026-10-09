@@ -1,6 +1,6 @@
 {
   "name": "hbsg-searchlight",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "Claude Desktop extension for the SearchLight API: events, benchmarks, insights, and CSV exports.",
   "type": "module",

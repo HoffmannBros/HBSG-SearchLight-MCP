@@ -293,7 +293,8 @@ export function staticField(name: string): FieldInfo | undefined {
 /**
  * How to read the core metrics without the common misreads, condensed from
  * the "Interpreting the core metrics" section of the metrics reference
- * (docs.searchlightdigital.io/api/metrics, read 2026-09-26).
+ * (docs.searchlightdigital.io/api/metrics, read 2026-09-26). The revenue
+ * entries on summing across periods come from a live check on 2026-10-09.
  */
 export const METRIC_GUIDE: Record<string, string> = {
   leads:
@@ -306,6 +307,18 @@ export const METRIC_GUIDE: Record<string, string> = {
   roasClosed:
     "Counts only closed, invoiced jobs, which post 2 to 4 weeks after the work. A drop in the current or just-finished month is usually lag, not performance. Meaningless for channels with no spend (Direct, Organic, AI). Compare to the same channel in prior periods; home-services paid search usually runs 4x to 10x.",
   roasPotential: "Includes sold and estimated revenue, so it leads roasClosed. Meaningless for channels with no spend.",
+  soldRevenue:
+    "Jobs sold but not yet closed, at the customer's last step in the period. Within one row, soldRevenue + closedRevenue is the projected closed total for work sold so far; a customer is never in both. Never sum it across interval rows or separate periods: a job sold in July and closed in August is in July's soldRevenue and August's closedRevenue (monthly rows summed to more than double the true figure in a live check). For a range over 90 days, sum closedRevenue and add soldRevenue from the latest period only.",
+  closedRevenue:
+    "Closed, invoiced jobs; posts 2 to 4 weeks after the work. The one revenue metric that is safe to sum or trend across interval rows. Within one row, add soldRevenue for the projected closed total.",
+  estimatedRevenue:
+    "Open estimates for customers whose last step in the period is estimated, averaged per customer. Never sum it across interval rows or separate periods; an estimate that later sells is counted again as sold or closed.",
+  revenuePotential:
+    "estimatedRevenue + soldRevenue + closedRevenue, each customer counted once at their last step in the period. Safe to add across dimensions within one query. Never sum it across interval rows or separate periods (monthly rows overstate a quarter by about 17%); request the range as one interval=total row instead.",
+  payingCustomers:
+    "Customers whose last step in the period is sold or closed. Never sum it across interval rows or separate periods; a customer sold in one month and closed in the next is counted in both.",
+  total:
+    "Not a revenue figure: it sums every FSM event, including every estimate on a job, and runs several times revenuePotential. Use closedRevenue, soldRevenue, or revenuePotential.",
   avgTicket:
     "Revenue per paying customer. Shifts with job mix (more small jobs pulls it down); check the job count alongside it before reading it as pricing.",
   matchRate:

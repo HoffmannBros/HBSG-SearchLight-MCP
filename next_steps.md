@@ -2,7 +2,7 @@
 
 Handoff state for HBSG-SearchLight-MCP.
 
-**Last updated:** 2026-09-28 (v1.1.0 merged to `main` and tagged `v1.1.0`)
+**Last updated:** 2026-10-09 (v1.1.1: revenue summing caveats; probe re-run)
 
 ## Goal
 
@@ -191,6 +191,41 @@ Compare tools checked by hand: `compare_to_benchmark` bands and direction are ri
 - Preflight on events now also refuses a missing start or end, an unknown interval, and
   `fields` with no queryable metric (only when every name is in the bundled reference).
   `scripts/probe.ts` uses a client with preflight disabled so it still records the API's codes.
+
+## Probe and revenue double-count check (2026-10-09, Mac, live)
+
+`npm run probe`: no drift. Still three endpoints (events, benchmarks, insights), 121 fields
+live and bundled, no new parameters, latest release note still 2026-09-21. The 10
+`dictionaryOnly` metrics are still not queryable.
+
+Revenue check, org `hoffmann-brothers`, 2026-07-01 to 2026-09-28, 50,038 customers:
+
+- **Inside one query nothing double counts.** Per `opportunityId`, at most one of
+  `estimatedRevenue` / `soldRevenue` / `closedRevenue` is non-zero (0 exceptions) and the three
+  always sum to `revenuePotential`. Rows by channel, campaign, `adjustedType`, or
+  `opportunityId` add up exactly to the ungrouped total.
+- **Summing period rows double counts.** Each `interval` row (and each separate query) takes
+  the customer's last step inside that period. Sum of the three monthly rows vs the single
+  90-day row: `soldRevenue` $8.92M vs $4.16M (+114%), `estimatedRevenue` $34.2M vs $29.0M
+  (+18%), `closedRevenue` $31.2M vs $30.3M (+3%), `revenuePotential` $74.2M vs $63.4M (+17%),
+  `payingCustomers` 16,438 vs 13,959. 920 customers sit in `soldRevenue` in one month and in
+  `closedRevenue` in a later one ($4.7M). `interval=month` rows equal separate month queries.
+- `total` sums every FSM event (all estimates): $248M against $63M `revenuePotential`. Not a
+  revenue figure to report.
+- The extension never sums rows itself (chunking concatenates, compare tools join), so the
+  exposure is a model or person adding up interval rows, or `compare_periods` showing the same
+  job as sold in the earlier period and closed in the later one.
+
+**v1.1.1 (same day)** ships the caveats as text only: `METRIC_GUIDE` entries for
+`soldRevenue`, `closedRevenue`, `estimatedRevenue`, `revenuePotential`, `payingCustomers`, and
+`total`, plus a Revenue sentence in the server instructions. Rule: within one row,
+`soldRevenue + closedRevenue` is the projected closed total (July's sold dollars were 77%
+closed by Sept 28 at about 115% of the sold amount, 3% fell out); never sum the stage metrics
+across periods; over 90 days, sum `closedRevenue` and add `soldRevenue` from the latest period
+only. Pushed to `main`, tagged `v1.1.1`, GitHub Release v1.1.1 with the .mcpb, marked Latest.
+
+Packaging: the pack guard caught `searchlight_customer_attribution_detail_export_example.csv`
+(gitignored, Mac clone only, customer data) being packed. `.mcpbignore` now excludes `*.csv`.
 
 ## Next actions, in order
 

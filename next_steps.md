@@ -258,9 +258,8 @@ Packaging: the pack guard caught `searchlight_customer_attribution_detail_export
 ## Next actions, in order
 
 -1. **Run the v1.2.0 plan** (`docs/plans/2026-11-11-v1.2.0-clara-parity.md`) in a new parent
-   session. The plan file and this note are uncommitted on `main` as of 2026-11-11; commit
-   them (or carry them onto `feat/v1.2.0`) before creating worktrees, or sub-sessions will not
-   see the plan.
+   session. The plan file and this note are committed on local `main` (2026-11-11, not
+   pushed), so worktrees cut from `feat/v1.2.0` will contain the plan.
 
 0. v1.1.0 is done: Justin installed the 1.1.0 .mcpb in Claude Desktop on 2026-09-28 and both
    compare questions ("How did each account do against the industry last month?", "Compare

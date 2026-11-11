@@ -1,6 +1,6 @@
 import { SearchLightClient, SearchLightConfigError } from "./client.js";
 import { loadConfig, type Config } from "./config.js";
-import { checkScope, type Scope } from "./scope.js";
+import { assertSubsetAllowed, checkScope, type Scope } from "./scope.js";
 
 export interface AppContext {
   config: Config;
@@ -32,14 +32,17 @@ export async function resolveScope(
   ctx: AppContext,
   explicit: string | undefined,
   accounts: string[] | undefined,
+  subset?: string | undefined,
 ): Promise<Scope> {
   const organization = await resolveOrganization(ctx, explicit);
+  const sub = subset?.trim() || undefined;
+  assertSubsetAllowed(organization, sub);
   let access;
   try {
     access = await ctx.client.getAccess();
   } catch (err) {
     if (err instanceof SearchLightConfigError) throw err;
-    return { organization, accounts, notes: [] };
+    return { organization, accounts, subset: sub, notes: [] };
   }
-  return checkScope(access, organization, accounts);
+  return checkScope(access, organization, accounts, sub);
 }

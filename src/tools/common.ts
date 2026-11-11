@@ -9,7 +9,14 @@ export const organizationArg = z
   .string()
   .optional()
   .describe(
-    "Organization key. Omit to use the configured default, or the only organization this key can reach. To narrow to one account, use account/accounts rather than putting the account key here (an account key given here is rerouted through its organization). Call searchlight_list_access to see the options.",
+    "Organization key. Omit to use the configured default, or the only organization this key can reach. To narrow to one account, use account/accounts rather than putting the account key here (an account key or subset key given here is rerouted through its organization). Pass \"-\" for every account this key can reach, across organizations. Call searchlight_list_access to see the options.",
+  );
+
+export const subsetArg = z
+  .string()
+  .optional()
+  .describe(
+    "Subset key: a named group of accounts inside the organization, listed by searchlight_list_access. Sent as subset=<key>. Any account/accounts given must be in the subset. Not allowed with organization \"-\".",
   );
 
 export const accountArg = z.string().optional().describe("Restrict to one account key.");

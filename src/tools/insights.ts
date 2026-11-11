@@ -21,11 +21,13 @@ import {
   outputDirArg,
   pickAccounts,
   resolveOutputDir,
+  subsetArg,
   withExtension,
 } from "./common.js";
 
 const insightsInput = {
   organization: organizationArg,
+  subset: subsetArg,
   account: accountArg,
   accounts: accountsArg,
   start: z.string().optional().describe("Publication start date, YYYY-MM-DD. Give both start and end, or neither (neither returns the latest items per account)."),
@@ -38,6 +40,7 @@ const insightsInput = {
 
 interface InsightsArgs {
   organization?: string | undefined;
+  subset?: string | undefined;
   account?: string | undefined;
   accounts?: string[] | undefined;
   start?: string | undefined;
@@ -69,12 +72,12 @@ export function registerInsightTools(server: McpServer, ctx: AppContext): void {
     guarded(async (args) => {
       validateDates(args);
       const before = ctx.client.requestCount;
-      const scope = await resolveScope(ctx, args.organization, pickAccounts(args.account, args.accounts));
+      const scope = await resolveScope(ctx, args.organization, pickAccounts(args.account, args.accounts), args.subset);
       const org = scope.organization;
       const items: InsightItem[] = [];
       await fetchInsightsChunked<InsightItem>(
         ctx.client,
-        { organization: org, accounts: scope.accounts, start: args.start, end: args.end, fields: args.fields },
+        { organization: org, accounts: scope.accounts, subset: scope.subset, start: args.start, end: args.end, fields: args.fields },
         async (chunk) => {
           items.push(...chunk);
         },
@@ -88,14 +91,14 @@ export function registerInsightTools(server: McpServer, ctx: AppContext): void {
       );
       const limited = limitRows(items, args.max_items);
       const text = [
-        `${limited.total} insight item(s) for ${org}${limited.truncated ? `, showing ${limited.rows.length}` : ""}. ${ctx.client.requestCount - before} API call(s).`,
+        `${limited.total} insight item(s) for ${org}${scope.subset ? ` (subset ${scope.subset})` : ""}${limited.truncated ? `, showing ${limited.rows.length}` : ""}. ${ctx.client.requestCount - before} API call(s).`,
         ...scope.notes,
         limited.rows.map((i) => `- ${describeInsight(i)}`).join("\n"),
         "```json",
         JSON.stringify(limited.rows, null, 2),
         "```",
       ].join("\n\n");
-      return textResult(text, { organization: org, itemCount: limited.total, truncated: limited.truncated, items: limited.rows });
+      return textResult(text, { organization: org, subset: scope.subset, itemCount: limited.total, truncated: limited.truncated, items: limited.rows });
     }),
   );
 
@@ -130,13 +133,13 @@ export function registerInsightTools(server: McpServer, ctx: AppContext): void {
       validateDates(args);
       const before = ctx.client.requestCount;
       const started = Date.now();
-      const scope = await resolveScope(ctx, args.organization, pickAccounts(args.account, args.accounts));
+      const scope = await resolveScope(ctx, args.organization, pickAccounts(args.account, args.accounts), args.subset);
       const org = scope.organization;
       const dir = resolveOutputDir(ctx, args.output_dir);
       const stem = sanitizeFilename(
         args.filename?.trim() || `insights_${sanitizeFilename(org)}_${args.start && args.end ? `${args.start}_${args.end}` : "latest"}`,
       );
-      const query = { organization: org, accounts: scope.accounts, start: args.start, end: args.end, fields: args.fields };
+      const query = { organization: org, accounts: scope.accounts, subset: scope.subset, start: args.start, end: args.end, fields: args.fields };
       const apiCallsUsed = () => ctx.client.requestCount - before;
 
       if (args.mode === "json") {

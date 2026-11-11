@@ -25,11 +25,13 @@ import {
   pickAccounts,
   previewRowsArg,
   resolveOutputDir,
+  subsetArg,
   withExtension,
 } from "./common.js";
 
 const eventsInput = {
   organization: organizationArg,
+  subset: subsetArg,
   fields: fieldsArg,
   start: dateArg("Start"),
   end: dateArg("End"),
@@ -42,6 +44,7 @@ const eventsInput = {
 
 interface EventsArgs {
   organization?: string | undefined;
+  subset?: string | undefined;
   fields: string[];
   start: string;
   end: string;
@@ -73,7 +76,7 @@ async function prepare(ctx: AppContext, args: EventsArgs): Promise<Prepared> {
     );
   }
   const extraParams = filtersToParams(args.filters as Filters | undefined, args.filter);
-  const scope = await resolveScope(ctx, args.organization, pickAccounts(args.account, args.accounts));
+  const scope = await resolveScope(ctx, args.organization, pickAccounts(args.account, args.accounts), args.subset);
   notes.push(...scope.notes);
   const query: EventsQuery = {
     organization: scope.organization,
@@ -82,6 +85,7 @@ async function prepare(ctx: AppContext, args: EventsArgs): Promise<Prepared> {
     end: args.end,
     interval,
     accounts: scope.accounts,
+    subset: scope.subset,
     extraParams,
   };
   const columns = [...(interval === "total" ? [] : ["start", "end"]), ...args.fields];
@@ -115,7 +119,7 @@ export function registerEventsTools(server: McpServer, ctx: AppContext): void {
         notes.push(`Showing ${limited.rows.length} of ${limited.total} rows. Use searchlight_export_events_csv for the full set.`);
       }
       const text = [
-        `${limited.total} row(s) for ${query.organization}, ${query.start} to ${query.end}, interval=${query.interval}${query.accounts ? `, accounts=${query.accounts.join(",")}` : ""}. ${apiCalls} API call(s)${stats.splits ? `, ${stats.splits} split(s)` : ""}, ${Date.now() - started} ms.`,
+        `${limited.total} row(s) for ${query.organization}, ${query.start} to ${query.end}, interval=${query.interval}${query.subset ? `, subset=${query.subset}` : ""}${query.accounts ? `, accounts=${query.accounts.join(",")}` : ""}. ${apiCalls} API call(s)${stats.splits ? `, ${stats.splits} split(s)` : ""}, ${Date.now() - started} ms.`,
         ...notes,
         markdownTable(limited.rows, inferColumns(limited.rows, columns)),
       ].join("\n\n");
@@ -125,6 +129,7 @@ export function registerEventsTools(server: McpServer, ctx: AppContext): void {
         end: query.end,
         interval: query.interval,
         accounts: query.accounts,
+        subset: query.subset,
         rowCount: limited.total,
         truncated: limited.truncated,
         rows: limited.rows,
@@ -161,6 +166,7 @@ export function registerEventsTools(server: McpServer, ctx: AppContext): void {
         end: z.string(),
         interval: z.string(),
         accounts: z.array(z.string()).optional(),
+        subset: z.string().optional(),
         apiCalls: z.number(),
         chunks: z.number(),
         splits: z.number(),
@@ -212,6 +218,7 @@ export function registerEventsTools(server: McpServer, ctx: AppContext): void {
         end: query.end,
         interval: query.interval,
         accounts: query.accounts,
+        subset: query.subset,
         apiCalls,
         chunks: stats.chunks,
         splits: stats.splits,

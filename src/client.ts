@@ -20,9 +20,17 @@ export interface EndpointInfo {
   [key: string]: unknown;
 }
 
+export interface SubsetInfo {
+  subset: string;
+  name?: string;
+  accounts?: string[];
+}
+
 export interface OrganizationInfo {
   organization: string;
   accounts: string[];
+  /** Named groups of the organization's accounts (API release 2026-10-12). Sent as `subset=<id>`. */
+  subsets?: SubsetInfo[];
   [key: string]: unknown;
 }
 
@@ -128,11 +136,18 @@ export class Semaphore {
   }
 }
 
-function hintFor(status: number, message: string, path: string): string {
+function hintFor(status: number, message: string, path: string, code: string | undefined, params: QueryParams): string {
   switch (status) {
     case 401:
       return "The API key was rejected. Check the key in Claude Desktop under Settings, Extensions, SearchLight, or generate a new one in the SearchLight app under Settings, API.";
     case 404:
+      if (code === "inaccessible-accounts") {
+        return `An account in this request is not under the organization in "${path}"${params.subset !== undefined ? ` or not in subset "${params.subset}"` : ""}, or this key cannot reach it. Call searchlight_list_access to see the account keys under each organization and subset.`;
+      }
+      if (params.subset !== undefined) {
+        // An unknown subset answers 404 inaccessible-organization too (checked live 2026-11-11).
+        return `Either the organization in "${path}" is not accessible with this key, or it has no subset "${params.subset}". Call searchlight_list_access to see the organizations and the subsets each one lists.`;
+      }
       return `The organization in "${path}" is not accessible with this key. Call searchlight_list_access to see the organization and account keys you can use.`;
     case 429:
       return "SearchLight limits requests per user per hour. Wait for the hour to roll over before retrying; prefer fewer, larger requests.";
@@ -179,7 +194,7 @@ export class SearchLightClient {
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.sleep = opts.sleep ?? ((ms) => sleepFor(ms));
     this.maxAttempts = opts.maxAttempts ?? 3;
-    this.accessTtlMs = opts.accessTtlMs ?? 10 * 60_000;
+    this.accessTtlMs = opts.accessTtlMs ?? 60 * 60_000;
   }
 
   get baseUrl(): string {
@@ -251,7 +266,7 @@ export class SearchLightClient {
         const { message, code } = await parseErrorBody(res);
         const retryAfterRaw = res.headers.get("retry-after");
         const retryAfter = retryAfterRaw && /^\d+$/.test(retryAfterRaw) ? Number(retryAfterRaw) : undefined;
-        const error = new SearchLightApiError(res.status, message, code, hintFor(res.status, message, path), url, retryAfter);
+        const error = new SearchLightApiError(res.status, message, code, hintFor(res.status, message, path, code, params), url, retryAfter);
 
         if (res.status === 429) {
           if (attempt === 1 && retryAfter !== undefined && retryAfter <= 60) {
@@ -269,7 +284,7 @@ export class SearchLightClient {
     });
   }
 
-  /** `GET /api`, cached for a few minutes. */
+  /** `GET /api`, cached for an hour; `force` bypasses the cache. */
   async getAccess(force = false): Promise<AccessInfo> {
     const now = Date.now();
     if (!force && this.accessCache && now - this.accessCache.at < this.accessTtlMs) {
@@ -307,12 +322,40 @@ export class SearchLightClient {
     );
   }
 
-  /** Account keys under an organization, or [] when the key names a single account. */
-  async listAccounts(organization: string): Promise<string[]> {
+  /**
+   * Account keys under an organization, or [] when the key names a single
+   * account. With a subset, the subset's accounts. For `-`, every account the
+   * key reaches across organizations.
+   */
+  async listAccounts(organization: string, subset?: string): Promise<string[]> {
     const access = await this.getAccess();
-    const org = (access.organizations ?? []).find((o) => o.organization === organization);
-    return org ? [...(org.accounts ?? [])] : [];
+    const orgs = access.organizations ?? [];
+    if (organization === ALL_ORGANIZATIONS) return reachableAccounts(orgs);
+    const org = orgs.find((o) => o.organization === organization);
+    if (!org) return [];
+    if (subset !== undefined) {
+      const found = (org.subsets ?? []).find((s) => s.subset === subset);
+      return [...(found?.accounts ?? [])];
+    }
+    return [...(org.accounts ?? [])];
   }
+}
+
+/** The organization argument meaning "every account this key can reach". */
+export const ALL_ORGANIZATIONS = "-";
+
+/**
+ * Every account key reachable through any organization. An organization that
+ * lists no accounts is itself an account, so its own key counts.
+ */
+export function reachableAccounts(orgs: OrganizationInfo[]): string[] {
+  const out = new Set<string>();
+  for (const o of orgs) {
+    const accounts = o.accounts ?? [];
+    if (accounts.length === 0) out.add(o.organization);
+    for (const a of accounts) out.add(a);
+  }
+  return [...out];
 }
 
 function backoffMs(attempt: number): number {

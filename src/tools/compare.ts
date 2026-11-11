@@ -31,6 +31,7 @@ import {
   guarded,
   organizationArg,
   pickAccounts,
+  subsetArg,
 } from "./common.js";
 
 const DEFAULT_BENCHMARK_METRICS = ["bookRate", "matchRate", "avgTicket", "avgCostPerLead", "roasClosed", "roasPotential"];
@@ -53,6 +54,7 @@ export function registerCompareTools(server: McpServer, ctx: AppContext): void {
         "For one month, put each account's own numbers (from events) next to SearchLight's anonymized industry benchmark and its p10-p90 distribution, and say where each account stands. Standing reads in the metric's direction: for costs and cancel rates lower is better, so \"top 10%\" always means the good end. Optionally broken out by one benchmark dimension (e.g. attributionCategory), with the same dimension filters applied to both sides. Costs 2 API calls. The current month and previous-mtd are month-to-date.",
       inputSchema: {
         organization: organizationArg,
+        subset: subsetArg,
         month: monthArg,
         metrics: z
           .array(z.enum(BENCHMARK_METRICS))
@@ -79,8 +81,8 @@ export function registerCompareTools(server: McpServer, ctx: AppContext): void {
       const window = monthWindow(args.month, today);
       // Validates the filters (benchmark dimensions only) before anything is sent.
       benchmarkParams([], args.filters, undefined);
-      const scope = await resolveScope(ctx, args.organization, pickAccounts(args.account, args.accounts));
-      const benchParams = benchmarkParams([...(dim ? [dim] : []), ...metrics], args.filters, scope.accounts);
+      const scope = await resolveScope(ctx, args.organization, pickAccounts(args.account, args.accounts), args.subset);
+      const benchParams = benchmarkParams([...(dim ? [dim] : []), ...metrics], args.filters, scope.accounts, scope.subset);
       const notes = [...scope.notes];
       // resolveScope just loaded /api, so this is the cached copy.
       const dictionary = (await ctx.client.getAccess().catch(() => undefined))?.dictionary;
@@ -99,6 +101,7 @@ export function registerCompareTools(server: McpServer, ctx: AppContext): void {
         end: window.end,
         interval: "total",
         accounts: scope.accounts,
+        subset: scope.subset,
         extraParams: filtersToParams(args.filters as Filters | undefined),
       };
       const benchPath = `/api/${encodeURIComponent(scope.organization)}/benchmarks`;
@@ -201,6 +204,7 @@ export function registerCompareTools(server: McpServer, ctx: AppContext): void {
       ].join("\n\n");
       return textResult(text, {
         organization: scope.organization,
+        subset: scope.subset,
         month: args.month,
         start: window.start,
         end: window.end,
@@ -220,6 +224,7 @@ export function registerCompareTools(server: McpServer, ctx: AppContext): void {
         "Run the same events query over two date ranges and join the rows on their dimension values, with each metric's current value, previous value, change, and percent change (m, m_prev, m_change, m_pct). The comparison range defaults to the same number of days immediately before start. Rates are decimals, so a bookRate change of 0.05 is 5 points; m_pct is relative change. A row present in only one period has nulls on the other side. Each range is limited to 90 days. Costs at least 2 API calls.",
       inputSchema: {
         organization: organizationArg,
+        subset: subsetArg,
         fields: fieldsArg,
         start: dateArg("Current period start"),
         end: dateArg("Current period end"),
@@ -253,7 +258,7 @@ export function registerCompareTools(server: McpServer, ctx: AppContext): void {
       }
 
       const extraParams = filtersToParams(args.filters as Filters | undefined, args.filter);
-      const scope = await resolveScope(ctx, args.organization, pickAccounts(args.account, args.accounts));
+      const scope = await resolveScope(ctx, args.organization, pickAccounts(args.account, args.accounts), args.subset);
       const access = await ctx.client.getAccess().catch(() => undefined);
       const { dimensions, metrics } = classifyFields(args.fields, access?.dictionary);
       if (metrics.length === 0) {
@@ -263,7 +268,7 @@ export function registerCompareTools(server: McpServer, ctx: AppContext): void {
         throw new Error(`sort_by must be one of the requested metrics: ${metrics.join(", ")}.`);
       }
 
-      const base = { organization: scope.organization, fields: args.fields, interval: "total" as const, accounts: scope.accounts, extraParams };
+      const base = { organization: scope.organization, fields: args.fields, interval: "total" as const, accounts: scope.accounts, subset: scope.subset, extraParams };
       const curRows: Row[] = [];
       const prevRows: Row[] = [];
       const [curStats, prevStats] = await Promise.all([
@@ -294,6 +299,7 @@ export function registerCompareTools(server: McpServer, ctx: AppContext): void {
       ].join("\n\n");
       return textResult(text, {
         organization: scope.organization,
+        subset: scope.subset,
         current,
         previous,
         dimensions,

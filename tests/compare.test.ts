@@ -102,8 +102,10 @@ describe("isLowerBetter", () => {
 
 describe("bundled field reference", () => {
   it("matches the live dictionary size as of the 2026-09-28 probe", () => {
-    expect(STATIC_FIELDS).toHaveLength(121);
-    expect(new Set(STATIC_FIELDS.map((f) => f.name)).size).toBe(121);
+    const documented = STATIC_FIELDS.filter((f) => !f.undocumented);
+    expect(documented).toHaveLength(121);
+    expect(STATIC_FIELDS).toHaveLength(122);
+    expect(new Set(STATIC_FIELDS.map((f) => f.name)).size).toBe(122);
   });
 
   it("gives every lower-is-better metric a down direction", () => {

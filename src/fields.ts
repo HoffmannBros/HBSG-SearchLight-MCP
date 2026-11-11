@@ -28,13 +28,28 @@ export interface FieldInfo {
    * request for it is rejected. Kept so definitions still show offline.
    */
   dictionaryOnly?: boolean;
+  /**
+   * Answers on the events endpoint but is not in the live dictionary, so it
+   * may change without notice (checked 2026-11-11).
+   */
+  undocumented?: boolean;
+  /**
+   * `values` are examples from the docs; the live data returns values the
+   * list does not have (K13), so filter and group on values the data returns.
+   */
+  valuesAreExamples?: boolean;
 }
+
+/** Shown beside an undocumented field. */
+export const UNDOCUMENTED_NOTE = "answers on the events endpoint but is not in the live dictionary; may change without notice";
+/** Shown beside a values list that is only examples. */
+export const EXAMPLE_VALUES_NOTE = "examples; live values may differ";
 
 const dim = (
   name: string,
   group: string,
   description: string,
-  extra: Partial<Pick<FieldInfo, "values" | "leadGrading">> = {},
+  extra: Partial<Pick<FieldInfo, "values" | "leadGrading" | "undocumented" | "valuesAreExamples">> = {},
 ): FieldInfo => ({ name, type: "dimension", group, description, ...extra });
 
 const met = (
@@ -74,6 +89,7 @@ export const DIMENSIONS: FieldInfo[] = [
   dim("opportunityAgent", "Customer", "CSR associated with the customer"),
   dim("customerName", "Customer", "Customer name from the FSM when matched, otherwise from the lead"),
   dim("technician", "Customer", "Technician who delivered the service"),
+  dim("jobType", "Customer", "Job type from the field-service system", { undocumented: true }),
   dim("zip", "Customer", "Customer ZIP code"),
   dim("opportunityId", "Customer", "Unique customer identifier"),
   dim("sourceId", "Customer", "Customer identifier in the source system"),
@@ -88,13 +104,16 @@ export const DIMENSIONS: FieldInfo[] = [
   dim("opportunityBooked", "Funnel", "Boolean: whether the customer eventually booked, including after the time frame"),
   dim("conversionDetailedLabel", "Lead grading", "Conversion bookability grade", {
     values: ["Bookable - Booked", "Bookable - Didn't Book", "Unbookable"],
+    valuesAreExamples: true,
     leadGrading: true,
   }),
   dim("conversionIntent", "Lead grading", "Caller or submitter intent", { leadGrading: true }),
   dim("conversionReasonUnbookable", "Lead grading", "Why the conversion was unbookable, e.g. Out Of Service Area, Spam", {
+    valuesAreExamples: true,
     leadGrading: true,
   }),
   dim("conversionReasonLost", "Lead grading", "Why a bookable conversion did not book, e.g. Pricing Concerns", {
+    valuesAreExamples: true,
     leadGrading: true,
   }),
   dim("conversionOutOfServiceAreaZip", "Lead grading", "ZIP from out-of-service-area conversions", { leadGrading: true }),
@@ -290,27 +309,131 @@ export function staticField(name: string): FieldInfo | undefined {
   return byName.get(name);
 }
 
+/*
+ * Classification sets for the result guards. Formats come from the live
+ * dictionary on 2026-11-11 (percent, currency, number, multiplier); the K4 and
+ * K6 lists are SearchLight's own measurements, quoted in the v1.2.0 plan.
+ */
+
+/** The lead-grading metrics (K4). */
+export const GRADING_METRICS: ReadonlySet<string> = new Set([
+  "gradedConversions",
+  "bookableConversions",
+  "unbookableConversions",
+  "bookedConversions",
+  "bookableUnbookedConversions",
+  "percentConversionsGraded",
+  "conversionQuality",
+]);
+
+/** Metrics that read high when requested beside any grading metric (K4: leads +18.7% and +22.5%). */
+export const COUNTS_INFLATED_BY_GRADING: ReadonlySet<string> = new Set([
+  "customers",
+  "leads",
+  "opportunityCount",
+  "unmatchedCustomers",
+  "bookRate",
+  "matchRate",
+  "payingCustomerRate",
+  "stepBookRate",
+  "avgCostPerLead",
+]);
+
+/** Dimensions that switch the events endpoint to about one row per opportunity (K6). */
+export const RECORD_GRAIN_DIMENSIONS: ReadonlySet<string> = new Set([
+  "opportunityId",
+  "sourceId",
+  "opportunityStartDate",
+  "adjustedType",
+  "typeIsLast",
+  "firstBooked",
+  "firstClosed",
+  "customerStatus",
+]);
+
+/** Metrics whose value is a 0 to 1 rate: the live dictionary's `percent` format. */
+export const RATE_METRICS: ReadonlySet<string> = new Set([
+  "bookRate",
+  "matchRate",
+  "payingCustomerRate",
+  "customerCancelRate",
+  "cancelRate",
+  "percentConversionsGraded",
+  "conversionQuality",
+  "stepBookRate",
+  "stepEstimateRate",
+  "stepSoldRate",
+  "stepCloseRate",
+  "searchImpressionShare",
+  "searchLostIsBudget",
+  "searchLostIsRank",
+]);
+
+/** Ratio metrics that are not rates: averages and cost-per (dictionary group Averages). */
+const AVERAGE_METRICS = METRICS.filter((m) => m.group === "Averages").map((m) => m.name);
+/** Return on ad spend: the dictionary's `multiplier` format. */
+const ROAS_METRICS = ["roasPotential", "roasClosed"];
+
+/** Metrics whose value means nothing when there was no spend. */
+export const SPEND_BASED: ReadonlySet<string> = new Set([
+  "avgCostPerLead",
+  "avgCostPerPayingCustomer",
+  "avgCostPerBookedCustomer",
+  "roasPotential",
+  "roasClosed",
+]);
+
+/**
+ * Not meaningful on record-grain rows (K6): every rate, average, cost-per and
+ * ROAS metric, spend, and the grading metrics.
+ */
+export const NOT_MEANINGFUL_AT_RECORD_GRAIN: ReadonlySet<string> = new Set([
+  ...RATE_METRICS,
+  ...AVERAGE_METRICS,
+  ...ROAS_METRICS,
+  "spend",
+  ...GRADING_METRICS,
+]);
+
+/** The only metric whose interval rows add up to the whole window (K5). */
+export const SUMS_ACROSS_INTERVALS: ReadonlySet<string> = new Set(["spend"]);
+
 /**
  * How to read the core metrics without the common misreads, condensed from
  * the "Interpreting the core metrics" section of the metrics reference
  * (docs.searchlightdigital.io/api/metrics, read 2026-09-26). The revenue
- * entries on summing across periods come from a live check on 2026-10-09.
+ * entries on summing across periods come from a live check on 2026-10-09;
+ * the count and grading entries from SearchLight's measurements (K4, K5, K1 in
+ * the v1.2.0 plan). Only spend sums exactly across interval rows.
  */
+const GRADING_CAVEAT =
+  "Request grading metrics without customers, leads, opportunityCount, unmatchedCustomers, bookRate, matchRate, payingCustomerRate, stepBookRate or avgCostPerLead in the same call: beside a grading metric those read high (leads by about 19% to 23% in SearchLight's checks). Make a second call for the counts.";
+const DISTINCT_COUNT_CAVEAT =
+  "A distinct count per period: never sum interval rows (a customer active in two buckets is counted in each, so weekly rows add up to far more than the window), and a long window divided by its weeks understates a typical week. For a period's figure, request that period as one row.";
+
 export const METRIC_GUIDE: Record<string, string> = {
-  leads:
-    "Unique people, counted once each. conversions counts every call and form (one person calling three times is 3 conversions, 1 lead); use leads when the question is about people.",
+  leads: `Unique people, counted once each. conversions counts every call and form (one person calling three times is 3 conversions, 1 lead); use leads when the question is about people. ${DISTINCT_COUNT_CAVEAT}`,
+  customers: `Distinct customers by their state in the period. ${DISTINCT_COUNT_CAVEAT}`,
+  bookedCustomers: `Distinct customers with an appointment booked in the period. ${DISTINCT_COUNT_CAVEAT}`,
+  spend:
+    "The one metric that sums exactly across interval rows. In a channel or campaign split, spend on campaigns with no tracked events in the window is missing from the split (SearchLight saw split spend under the unsplit total on 39 of 44 accounts), so take total spend from a call without that split.",
+  gradedConversions: `Conversions that have been graded. ${GRADING_CAVEAT}`,
+  bookableConversions: `Conversions graded bookable, booked or not. ${GRADING_CAVEAT}`,
+  unbookableConversions: `Spam, wrong numbers, out-of-area and similar contacts that could not book. ${GRADING_CAVEAT}`,
+  conversionQuality: `bookableConversions / gradedConversions. ${GRADING_CAVEAT}`,
   conversions: "Every call, chat, and form, not unique by person. Use leads for people.",
   bookRate:
     "The denominator is every tracked contact with no exclusions, so spam, wrong numbers, and out-of-area calls pull it down. Check unbookableConversions before blaming the CSRs, and expect it to read lower than a CRM book rate. Below 35% usually warrants a look; above 55% is strong.",
-  bookableUnbookedConversions:
-    "Real demand that didn't book, the most direct missed-revenue signal. The reason matters: a Planned Follow Up is pending revenue, no availability is a scheduling gap. Break it out by conversionReasonLost.",
+  bookedConversions: `Conversions graded bookable and booked. ${GRADING_CAVEAT}`,
+  percentConversionsGraded: `gradedConversions / conversions. ${GRADING_CAVEAT}`,
+  bookableUnbookedConversions: `Real demand that didn't book, the most direct missed-revenue signal. The reason matters: a Planned Follow Up is pending revenue, no availability is a scheduling gap. Break it out by conversionReasonLost. ${GRADING_CAVEAT}`,
   roasClosed:
     "Counts only closed, invoiced jobs, which post 2 to 4 weeks after the work. A drop in the current or just-finished month is usually lag, not performance. Meaningless for channels with no spend (Direct, Organic, AI). Compare to the same channel in prior periods; home-services paid search usually runs 4x to 10x.",
   roasPotential: "Includes sold and estimated revenue, so it leads roasClosed. Meaningless for channels with no spend.",
   soldRevenue:
-    "Jobs sold but not yet closed, at the customer's last step in the period. Within one row, soldRevenue + closedRevenue is the projected closed total for work sold so far; a customer is never in both. Never sum it across interval rows or separate periods: a job sold in July and closed in August is in July's soldRevenue and August's closedRevenue (monthly rows summed to more than double the true figure in a live check). For a range over 90 days, sum closedRevenue and add soldRevenue from the latest period only.",
+    "Jobs sold but not yet closed, at the customer's last step in the period. Within one row, soldRevenue + closedRevenue is the projected closed total for work sold so far; a customer is never in both. Never sum it across interval rows or separate periods: a job sold in July and closed in August is in July's soldRevenue and August's closedRevenue (monthly rows summed to more than double the true figure in a live check). For an exact figure, request the range as one total of 90 days or less. Over 90 days, sum closedRevenue rows (about 3% high) and add soldRevenue from the latest period only.",
   closedRevenue:
-    "Closed, invoiced jobs; posts 2 to 4 weeks after the work. The one revenue metric that is safe to sum or trend across interval rows. Within one row, add soldRevenue for the projected closed total.",
+    "Closed, invoiced jobs; posts 2 to 4 weeks after the work. The closest to summable of the revenue stages, and fine for trending, but still not exact: monthly rows ran about 3% over a 90-day total in a live check on 2026-10-09. For an exact figure, request one total of 90 days or less. Within one row, add soldRevenue for the projected closed total.",
   estimatedRevenue:
     "Open estimates for customers whose last step in the period is estimated, averaged per customer. Never sum it across interval rows or separate periods; an estimate that later sells is counted again as sold or closed.",
   revenuePotential:

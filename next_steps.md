@@ -2,7 +2,35 @@
 
 Handoff state for HBSG-SearchLight-MCP.
 
-**Last updated:** 2026-10-09 (v1.1.1: revenue summing caveats; probe re-run)
+**Last updated:** 2026-11-11 (v1.2.0 planned, not started; probe re-run; Clara compared)
+
+## Start here: v1.2.0 is planned, no code changed (2026-11-11)
+
+The plan is `docs/plans/2026-11-11-v1.2.0-clara-parity.md`. It is written to be run by one
+parent session that starts a sub-session per work item (four waves). Nothing in it has been
+started; `main` is still v1.1.1.
+
+What the review found (Windows, live, org `hoffmann-brothers`):
+
+- `npm run probe`: no field drift (121 live, 121 bundled). The only API change since 1.1.1 is
+  **subsets** (release note 2026-10-12): `subset=<id>` on events, benchmarks and insights, and
+  former sub-organizations now 404 in the path. We send `subset` nowhere. `hoffmann-brothers`
+  has no subsets defined.
+- SearchLight's own connector (ClaraT, https://searchlight.digital/clarat) is a passthrough to
+  the same API plus a knowledge base of rules. Checked with our `sl_` key: `/api/-/events`
+  (every reachable account) works; `jobType`, `eventId`, `agent`, `opportunityBooked` are
+  queryable though undocumented; `enhanced-events=true` returns `[]`; everything outside
+  `/api` (accounts config, provider health/QA, cache directory, `/access`) is 403 for an
+  `sl_` key. Ad-platform passthrough is out of scope by Justin's decision.
+- Clara's rules that this extension gets wrong or does not warn about (their measurements,
+  to be re-verified per the plan): a channel/campaign split drops spend on campaigns with no
+  tracked events; `["or", ...]`/regex filters sometimes return an empty 200; grading metrics
+  beside count metrics inflate `leads` by about 20%; only `spend` sums across interval rows
+  (our v1.1.1 text says `closedRevenue` is safe to sum, which is too generous); a 1,000
+  account x interval cap (`too-many-combinations`); rate limit is 2,000 requests/user/hour.
+- Usage: all four exports in `Documents/SearchLight Reports` and the `google-member-cost`
+  skill pull account/channel/campaign with spend and revenue, which is the shape the first
+  two rules affect. The skill itself needs a follow-up edit after 1.2.0 (plan, Wave 4).
 
 ## Goal
 
@@ -229,6 +257,11 @@ Packaging: the pack guard caught `searchlight_customer_attribution_detail_export
 
 ## Next actions, in order
 
+-1. **Run the v1.2.0 plan** (`docs/plans/2026-11-11-v1.2.0-clara-parity.md`) in a new parent
+   session. The plan file and this note are uncommitted on `main` as of 2026-11-11; commit
+   them (or carry them onto `feat/v1.2.0`) before creating worktrees, or sub-sessions will not
+   see the plan.
+
 0. v1.1.0 is done: Justin installed the 1.1.0 .mcpb in Claude Desktop on 2026-09-28 and both
    compare questions ("How did each account do against the industry last month?", "Compare
    last 30 days to the 30 before by campaign") worked. Fast-forwarded to `main`, tagged
@@ -257,7 +290,7 @@ Packaging: the pack guard caught `searchlight_customer_attribution_detail_export
 - Parsing `attributionDetail` into columns (gclid, utm_*, keyword, adGroup, trackingNumber) as
   an export option.
 - A funnel/lead-quality report tool (customers by `adjustedType`, step rates, BNB by
-  `conversionReasonLost`).
+  `conversionReasonLost`). Now in the v1.2.0 plan (W3-A, W3-B).
 - MCP prompts for a monthly account review and a lead-quality review.
 
 ## Verified facts worth keeping

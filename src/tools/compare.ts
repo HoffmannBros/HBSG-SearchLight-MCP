@@ -16,7 +16,7 @@ import type { AppContext } from "../context.js";
 import { resolveScope } from "../context.js";
 import type { Row } from "../csv.js";
 import { DateError, MAX_INTERVAL_DAYS, daysInclusive, localToday, monthWindow, precedingWindow } from "../dates.js";
-import { BENCHMARK_DIMENSIONS, BENCHMARK_METRICS, METRIC_GUIDE } from "../fields.js";
+import { BENCHMARK_DIMENSIONS, BENCHMARK_METRICS, METRIC_GUIDE, SPEND_BASED } from "../fields.js";
 import { filtersToParams, type Filters } from "../filters.js";
 import { inferColumns, limitRows, markdownTable, textResult } from "../format.js";
 import { benchmarkFiltersArg, benchmarkParams, monthArg } from "./benchmarks.js";
@@ -35,14 +35,8 @@ import {
 
 const DEFAULT_BENCHMARK_METRICS = ["bookRate", "matchRate", "avgTicket", "avgCostPerLead", "roasClosed", "roasPotential"];
 
-/** Metrics whose value means nothing when there was no spend. */
-const SPEND_BASED = new Set([
-  "avgCostPerLead",
-  "avgCostPerPayingCustomer",
-  "avgCostPerBookedCustomer",
-  "roasPotential",
-  "roasClosed",
-]);
+/** Metrics whose value means nothing when there was no spend; lives in fields.ts. */
+export { SPEND_BASED };
 
 export function registerCompareTools(server: McpServer, ctx: AppContext): void {
   server.registerTool(

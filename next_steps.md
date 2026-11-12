@@ -2,13 +2,15 @@
 
 Handoff state for HBSG-SearchLight-MCP.
 
-**Last updated:** 2026-11-11 (v1.2.0 built on `feat/v1.2.0`; not pushed, merged to main, tagged or released)
+**Last updated:** 2026-11-11 (v1.2.0 released)
 
-## Start here: v1.2.0 is built and waiting for Justin's go-ahead (2026-11-11)
+## Start here: v1.2.0 is released (2026-11-11)
 
-All work is on local branch `feat/v1.2.0` (cut from local `main` at `5ea26b0`). Nothing is
-pushed. Waiting on Justin before: pushing, merging to `main`, tagging `v1.2.0`, the GitHub
-release with `dist/hbsg-searchlight-1.2.0.mcpb`.
+On Justin's go-ahead: `feat/v1.2.0` fast-forwarded into `main` (`1b858a0`), pushed, tagged
+`v1.2.0`, GitHub Release v1.2.0 published with `hbsg-searchlight-1.2.0.mcpb` (re-packed from
+`main`), marked Latest. Not yet done: installing 1.2.0 in Claude Desktop and trying a
+performance report. The build worktrees under `.claude/worktrees/` and their branches are
+still on disk (all merged).
 
 Final checks on `feat/v1.2.0` (Windows): `npm test` 300/300 in 18 files; `npm run probe` OK
 (no field drift, no unsent parameters); `npm run smoke` OK (all 13 tools, report totals equal
@@ -323,10 +325,9 @@ Packaging: the pack guard caught `searchlight_customer_attribution_detail_export
 
 ## Next actions, in order
 
--1. **Release v1.2.0 once Justin says go:** merge `feat/v1.2.0` to `main`, push, tag
-   `v1.2.0`, GitHub Release with `dist/hbsg-searchlight-1.2.0.mcpb` (re-pack first), then
-   install it in Claude Desktop and try a performance report. Then the follow-ups listed
-   under "Start here".
+-1. **Install v1.2.0** in Claude Desktop (double-click the .mcpb from the v1.2.0 release) and
+   try "performance report by channel for last month". Then the follow-ups listed under
+   "Start here".
 
 0. v1.1.0 is done: Justin installed the 1.1.0 .mcpb in Claude Desktop on 2026-09-28 and both
    compare questions ("How did each account do against the industry last month?", "Compare

@@ -45,9 +45,9 @@ const client = new UncheckedClient({
 
 /** What the extension sends to each endpoint; anything else the API lists is new. */
 const PARAMS_WE_USE: Record<string, string[]> = {
-  events: ["fields", "start", "end", "interval", "account", "accounts", "filter"],
-  benchmarks: ["fields", "month", "account", "accounts"],
-  insights: ["fields", "start", "end", "account", "accounts"],
+  events: ["fields", "start", "end", "interval", "account", "accounts", "filter", "subset"],
+  benchmarks: ["fields", "month", "account", "accounts", "subset"],
+  insights: ["fields", "start", "end", "account", "accounts", "subset"],
 };
 
 interface Outcome {

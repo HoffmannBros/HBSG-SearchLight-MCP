@@ -50,9 +50,52 @@ What are SearchLight's latest action items for our accounts?
 | `searchlight_export_insights_csv` | Insight items flattened to CSV, or raw JSON |
 | `searchlight_compare_to_benchmark` | Each account's month next to the industry figure and p10 to p90 range, with a standing that knows lower is better for costs |
 | `searchlight_compare_periods` | One events query over two date ranges, joined on dimensions, with change and percent change |
+| `searchlight_performance_report` | Standard spend-to-revenue table by channel, campaign, account or business unit, with projected revenue, unattributed spend and a totals line |
+| `searchlight_funnel_report` | Customers at each funnel stage, the step rate into it, and the revenue held there |
 | `searchlight_api_call` | Any SearchLight API path directly, for anything new |
 
 All tools are read-only.
+
+- `searchlight_performance_report`: one table for a range of 90 days or less, split by one or
+  two of account, attributionCategory, attributionChannel, campaign, normalizedBusinessUnit,
+  businessUnit (default attributionChannel): spend, leads, booked and paying customers, sold
+  and closed revenue, projectedRevenue (sold + closed), book rate, cost per lead, roasClosed
+  and roasProjected. Adds a "spend with no tracked events" line for spend SearchLight leaves
+  out of a split, and a totals line from a separate unsplit request. `export: true` also
+  writes a CSV.
+- `searchlight_funnel_report`: for a range of 90 days or less, the customers whose furthest
+  stage is lead-originated, booked, estimated, sold, closed or canceled, the step rate into
+  each stage and the revenue held there; optionally one funnel per account,
+  attributionCategory, attributionChannel or normalizedBusinessUnit.
+
+### Organizations, subsets and `-`
+
+Every typed tool takes an `organization`. `searchlight_list_access` lists each organization's
+accounts and its subsets (named groups of accounts, added to the API on 2026-10-12); pass
+`subset` to narrow to one. `organization: "-"` means every account your key reaches;
+`subset` cannot be combined with it. Unknown organizations, subsets, and accounts outside
+them are refused before any request is sent. The `/api` lookup behind these checks is
+cached for 60 minutes; `searchlight_list_access(refresh=true)` bypasses the cache.
+
+### Accuracy guards
+
+SearchLight's API returns numbers that are easy to misread. The events tools check each
+result and say what they did in the result's `notes`:
+
+| Behaviour | Turn off with |
+|---|---|
+| When spend is split by campaign or channel, a second unsplit request finds spend on campaigns with no tracked events, which the split leaves out, and reports it as `spendReconciliation`. The export can append it as one row per account with `add_unattributed_spend_row: true`. | `reconcile_spend: false` |
+| Rows with every dimension blank and every metric zero are dropped. | `drop_placeholder_rows: false` |
+| An empty answer to an `["or", ...]` filter is retried once per value (up to 12). | `retry_or_filters: false` |
+| An all-zero total over more than 31 days is cross-checked with monthly rows; if the months have data, the tool returns an error instead of a false zero. | `check_zero_total: false` |
+
+They also note which metrics must not be summed across interval rows (only `spend` sums
+exactly), months missing from interval results (empty buckets are omitted, not zero),
+record-grain splits where rates and spend mean nothing, ROAS on zero-spend rows, and grading
+metrics requested beside counts they inflate. `searchlight_compare_periods` adds `m_points`
+(percentage points) for rate metrics. Filter values must use the operator form
+(`["or", "A", "B"]`); a plain list or an object such as `{"in": [...]}` is refused, because
+SearchLight answers it with an empty result and no error.
 
 ### Large exports
 
@@ -63,7 +106,9 @@ as too large, the extension splits it by account (only when `account` or `accoun
 of the requested fields, so aggregates keep their meaning) and then by date window, runs the
 pieces in parallel, and streams the rows into one file. The result reports how many API calls
 were used. SearchLight also enforces an hourly request limit per user; if you hit it, wait for
-the hour to roll over.
+the hour to roll over. A request over 1,000 account x interval combinations, which
+SearchLight refuses, is split by date before it is sent, or refused locally when it cannot be
+split without changing its rows.
 
 CSV files are UTF-8 with a byte-order mark and CRLF line endings, so Excel opens them cleanly
 on Windows. Existing files are never overwritten; a numeric suffix is added instead.
@@ -87,8 +132,9 @@ npm run smoke
 
 `npm run probe` checks the live API against what the extension assumes: it diffs the `/api`
 field dictionary and endpoint parameters against the bundled reference, confirms the
-organization-path and error-code behavior, and records the live insights shape. It uses
-about 8 requests and writes a report to `smoke-output/probe-<date>.md`.
+organization-path and error-code behavior, and records the live insights shape, subsets, the
+`-` organization, the undocumented fields, and the K1/K2/K4/K10 accuracy checks from the
+v1.2.0 plan. It uses about 16 requests and writes a report to `smoke-output/probe-<date>.md`.
 
 ### Release
 
@@ -124,7 +170,8 @@ bundled Node. Layout:
 | `src/fields.ts` | Bundled dimension and metric reference, and the metric reading guide |
 | `src/scope.ts` | Checks organization and account keys against `/api` before a request is sent |
 | `src/compare.ts` | Benchmark standing and two-period join logic |
-| `src/tools/` | The eleven MCP tools |
+| `src/guards.ts` | Accuracy rules applied to events results (spend reconciliation, summing and grain notes, or-filter retry, zero-total check), each tied to a dated measurement |
+| `src/tools/` | The thirteen MCP tools |
 | `scripts/pack.sh` | Release packaging with checks |
 
 Configuration reaches the server as environment variables: `SEARCHLIGHT_API_KEY`,

@@ -120,6 +120,29 @@ try {
     if (!notes.some((n) => n.includes("went through its organization"))) throw new Error("account-key reroute note missing");
   }
 
+  // v1.2.0 report tools. The totals line comes from its own unsplit request, so it must equal a plain total.
+  const perf = await call("searchlight_performance_report", { organization: org, start: start30, end });
+  const plain = await call("searchlight_query_events", { organization: org, fields: ["spend", "leads"], start: start30, end });
+  const plainRow = ((plain.rows as Array<Record<string, unknown>> | undefined) ?? [])[0] ?? {};
+  const totals = (perf.totals as Record<string, unknown> | undefined) ?? {};
+  for (const m of ["spend", "leads"]) {
+    if (Math.abs(Number(totals[m] ?? NaN) - Number(plainRow[m] ?? NaN)) > 0.01) {
+      throw new Error(`performance report totals ${m} ${String(totals[m])} != unsplit ${String(plainRow[m])}`);
+    }
+  }
+  await call("searchlight_funnel_report", { organization: org, start: start30, end });
+
+  // An unknown subset is refused locally (the API would answer a misleading 404 inaccessible-organization).
+  const refused = await client.callTool({
+    name: "searchlight_query_events",
+    arguments: { organization: org, subset: "smoke-not-a-subset", fields: ["leads"], start: start30, end },
+  });
+  const refusedText = text(refused);
+  console.log(`\n=== subset refusal${refused.isError ? "" : " NOT REFUSED"}\n${refusedText}`);
+  if (!refused.isError || !/subset/i.test(refusedText) || /\b404\b/.test(refusedText)) {
+    throw new Error("unknown subset was not refused locally");
+  }
+
   await call("searchlight_get_insights", { organization: org, max_items: 3 });
   await call("searchlight_export_insights_csv", { organization: org, filename: "smoke_insights" });
 

@@ -21,6 +21,8 @@ const EXPECTED_TOOLS = [
   "searchlight_compare_to_benchmark",
   "searchlight_compare_periods",
   "searchlight_api_call",
+  "searchlight_performance_report",
+  "searchlight_funnel_report",
 ];
 
 describe("built server over stdio", () => {
@@ -43,7 +45,7 @@ describe("built server over stdio", () => {
     await client?.close();
   });
 
-  it("exposes exactly the eleven SearchLight tools with read-only annotations", async () => {
+  it("exposes exactly the thirteen SearchLight tools with read-only annotations", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...EXPECTED_TOOLS].sort());
     for (const tool of tools) {

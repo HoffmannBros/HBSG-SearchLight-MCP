@@ -344,7 +344,7 @@ export const RECORD_GRAIN_DIMENSIONS: ReadonlySet<string> = new Set([
   "opportunityId",
   "sourceId",
   "opportunityStartDate",
-  "adjustedType",
+  // Not adjustedType, despite K6: live 2026-11-11, adjustedType alone returns one aggregated row per value.
   "typeIsLast",
   "firstBooked",
   "firstClosed",

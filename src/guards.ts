@@ -9,7 +9,14 @@
 import { toNumber } from "./compare.js";
 import type { Row } from "./csv.js";
 import { MAX_INTERVAL_DAYS, intervalBoundaries, type Interval } from "./dates.js";
-import { NOT_MEANINGFUL_AT_RECORD_GRAIN, RATE_METRICS, RECORD_GRAIN_DIMENSIONS, SUMS_ACROSS_INTERVALS } from "./fields.js";
+import {
+  COUNTS_INFLATED_BY_GRADING,
+  GRADING_METRICS,
+  NOT_MEANINGFUL_AT_RECORD_GRAIN,
+  RATE_METRICS,
+  RECORD_GRAIN_DIMENSIONS,
+  SUMS_ACROSS_INTERVALS,
+} from "./fields.js";
 
 /** Dimensions that split rows by time; a split on them keeps every day's spend. */
 export const TIME_DIMENSIONS: ReadonlySet<string> = new Set(["date", "dateTime", "createdDateTime", "week", "month"]);
@@ -339,4 +346,132 @@ export function filterFieldNames(filters: Record<string, unknown> | undefined, c
   };
   walk(crossFilter);
   return [...names];
+}
+
+/* ---------- Automatic repairs (W2-B): K4 note, K2 fallback, K9 check ---------- */
+
+/**
+ * K4: counts requested beside grading metrics read high. SearchLight measured
+ * leads +18.7% and +22.5% (2026-07-27). Not reproducible here (these accounts
+ * have no grading data), so the request is sent unchanged with this note.
+ */
+export function gradingNote(metrics: string[]): string | null {
+  const grading = metrics.filter((m) => GRADING_METRICS.has(m));
+  const counts = metrics.filter((m) => COUNTS_INFLATED_BY_GRADING.has(m));
+  if (grading.length === 0 || counts.length === 0) return null;
+  return `${list(counts)} ${counts.length === 1 ? "was" : "were"} requested beside the grading metric${grading.length === 1 ? "" : "s"} ${list(grading)}. SearchLight measured counts like these reading high (leads by about 19 to 23%) when grading metrics are in the same request. Request ${list(counts)} in a separate call without grading metrics and use those figures. This request was sent unchanged.`;
+}
+
+/** Most values an `or` filter is expanded into; above it, the fallback does not retry. */
+export const MAX_OR_EXPANSION = 12;
+
+export type ScalarFilterValue = string | number | boolean;
+
+export interface OrFilter {
+  field: string;
+  values: ScalarFilterValue[];
+}
+
+/** A filter value as SearchLight reads it: a string holding a JSON list is a list. */
+function filterExpression(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const t = value.trim();
+  if (!t.startsWith("[")) return value;
+  try {
+    return JSON.parse(t) as unknown;
+  } catch {
+    return value;
+  }
+}
+
+const isScalar = (v: unknown): v is ScalarFilterValue => typeof v === "string" || typeof v === "number" || typeof v === "boolean";
+
+/**
+ * Per-field filters (in the caller's order) that are a top-level
+ * `["or", v1, v2, ...]` with every argument a plain string, number or boolean:
+ * the form K2 says can answer 200 with an empty body.
+ */
+export function qualifyingOrFilters(filters: Record<string, unknown> | undefined): OrFilter[] {
+  const out: OrFilter[] = [];
+  for (const [field, raw] of Object.entries(filters ?? {})) {
+    const expr = filterExpression(raw);
+    if (!Array.isArray(expr) || expr[0] !== "or" || expr.length < 2) continue;
+    const values = expr.slice(1);
+    if (values.every(isScalar)) out.push({ field, values: [...new Set(values)] });
+  }
+  return out;
+}
+
+/** Per-field filters using `regex` or `not` anywhere in their expression. */
+export function regexOrNotFilterFields(filters: Record<string, unknown> | undefined): string[] {
+  const uses = (v: unknown): boolean =>
+    Array.isArray(v) && ((v[0] === "regex" || v[0] === "not") || v.slice(1).some(uses));
+  return Object.entries(filters ?? {})
+    .filter(([, raw]) => uses(filterExpression(raw)))
+    .map(([field]) => field);
+}
+
+/** The query parameter value for a plain equality filter. */
+export function equalityParam(value: ScalarFilterValue): string {
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
+
+export interface OrFallbackResult {
+  filter: OrFilter;
+  /** True when the field was not in `fields` and was added to each retry. */
+  addedField: boolean;
+  /** Rows returned for each value, in the order sent. */
+  rowsPerValue: number[];
+  /** Other qualifying `or` filters that were left as they were. */
+  otherFields: string[];
+}
+
+export function orFallbackNote(r: OrFallbackResult): string {
+  const { field, values } = r.filter;
+  const total = r.rowsPerValue.reduce((a, b) => a + b, 0);
+  const parts = [
+    `The ${field} filter ["or", ...] answered no rows, which is a known SearchLight fault for or filters (it sometimes answers an empty result where single values return rows). Re-sent once per value with a plain equality filter on ${field}: ${values.length} extra request(s), ${values.map((v, i) => `${JSON.stringify(v)} ${r.rowsPerValue[i]} row(s)`).join(", ")}; ${total} row(s) in all.`,
+    r.addedField
+      ? `${field} was not in fields, so it was added to each retry to keep the values apart; the rows are one per ${field} value (sum them for the combined figure).`
+      : `The rows for each ${field} value are concatenated.`,
+    `Counts, spend and revenue add up across the values; rates and averages are per value and must not be added.`,
+  ];
+  if (r.otherFields.length > 0) {
+    parts.push(`Only one filter is expanded; the or filter${r.otherFields.length === 1 ? "" : "s"} on ${list(r.otherFields)} ${r.otherFields.length === 1 ? "was" : "were"} sent as given.`);
+  }
+  parts.push("retry_or_filters=false turns this off.");
+  return parts.join(" ");
+}
+
+export function orTooManyNote(filter: OrFilter): string {
+  return `The ${filter.field} filter ["or", ...] answered no rows, which can be a known SearchLight fault for or filters. It has ${filter.values.length} values, over the ${MAX_OR_EXPANSION} this tool will retry one at a time, so it was not retried. Query fewer values at once, or one value per call with a plain equality filter.`;
+}
+
+export function regexOrNotEmptyNote(fields: string[]): string {
+  return `No rows, and the filter on ${list(fields)} uses regex or not. SearchLight sometimes answers such filters with an empty result where equality filters return rows, so the empty answer may be the filter rather than the data. Not retried; try plain equality filters, one value per call.`;
+}
+
+/** Days over which an interval=total read is cross-checked by month when it reads zero (K9). */
+export const ZERO_TOTAL_CHECK_DAYS = 31;
+
+/** Whether every requested metric is 0 or absent in every row (true for no rows). */
+export function allMetricsZero(rows: Row[], metrics: string[]): boolean {
+  return rows.every((r) => metrics.every((m) => isZeroOrAbsent(r[m])));
+}
+
+/**
+ * K9: an interval=total read over a long range with no dimensions can answer
+ * one all-zero row while monthly buckets carry data. True when the query has
+ * the shape that needs the monthly cross-check.
+ */
+export function zeroTotalCheckApplies(interval: Interval, dimensions: string[], days: number): boolean {
+  return interval === "total" && dimensions.length === 0 && days > ZERO_TOTAL_CHECK_DAYS;
+}
+
+export function zeroTotalFailedMessage(metrics: string[], days: number, monthly: Row[]): string {
+  return `The interval=total read failed: it answered 0 for ${list(metrics)} over ${days} days, but the same query by month returned non-zero values (1 extra request), so the total is not zero. SearchLight sometimes answers a long-range total with an all-zero row. The ${monthly.length} monthly row(s) are attached; do not add them up except spend, because a customer or job active in two months is counted in each. For an exact total, request a shorter range or check again later.`;
+}
+
+export function zeroTotalConfirmedNote(days: number): string {
+  return `Every metric read 0 over ${days} days, so the same query was sent once by month to rule out a failed total read (1 extra request); the monthly rows are also zero. check_zero_total=false skips this.`;
 }

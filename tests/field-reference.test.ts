@@ -75,9 +75,12 @@ describe("classification sets", () => {
   });
 
   it("matches the plan's K6 list exactly", () => {
+    // K6 without adjustedType: live check 2026-11-11 (one account, 2026-10-02 to 2026-10-31, interval=total)
+    // returned one aggregated row per adjustedType value whose customers summed to the unsplit count.
     expect([...RECORD_GRAIN_DIMENSIONS].sort()).toEqual(
-      ["opportunityId", "sourceId", "opportunityStartDate", "adjustedType", "typeIsLast", "firstBooked", "firstClosed", "customerStatus"].sort(),
+      ["opportunityId", "sourceId", "opportunityStartDate", "typeIsLast", "firstBooked", "firstClosed", "customerStatus"].sort(),
     );
+    expect(RECORD_GRAIN_DIMENSIONS.has("adjustedType")).toBe(false);
   });
 
   it("puts every rate, average, cost-per, ROAS, spend and grading metric in NOT_MEANINGFUL_AT_RECORD_GRAIN", () => {

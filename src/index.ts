@@ -8,6 +8,7 @@ import { registerCompareTools } from "./tools/compare.js";
 import { registerEventsTools } from "./tools/events.js";
 import { registerInsightTools } from "./tools/insights.js";
 import { registerRawTools } from "./tools/raw.js";
+import { registerReportTools } from "./tools/reports.js";
 import { SERVER_NAME, VERSION } from "./version.js";
 
 const INSTRUCTIONS = `SearchLight is Hoffmann Brothers' marketing attribution and lead-performance platform.
@@ -25,6 +26,7 @@ export function buildServer(env: NodeJS.ProcessEnv = process.env): McpServer {
   registerCompareTools(server, ctx);
   registerInsightTools(server, ctx);
   registerRawTools(server, ctx);
+  registerReportTools(server, ctx);
   if (!ctx.config.apiKey) {
     console.error("[hbsg-searchlight] SEARCHLIGHT_API_KEY is not set; tools will return a configuration error until it is.");
   }

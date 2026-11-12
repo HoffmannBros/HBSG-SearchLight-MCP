@@ -125,7 +125,11 @@ async function main(): Promise<void> {
   const access = await client.get<AccessInfo>("/api");
   const dict = access.dictionary ?? {};
   const liveNames = Object.keys(dict);
-  const staticNames = STATIC_FIELDS.map((f) => f.name);
+  // Bundled fields marked `undocumented` answer on events but are not expected in the
+  // live dictionary, so they are kept out of the drift diff; section 4 tracks them.
+  const allBundledNames = STATIC_FIELDS.map((f) => f.name);
+  const staticNames = STATIC_FIELDS.filter((f) => !f.undocumented).map((f) => f.name);
+  const undocumentedBundled = STATIC_FIELDS.filter((f) => f.undocumented).map((f) => f.name);
 
   const typeMismatches = STATIC_FIELDS.filter((f) => dict[f.name]?.type && dict[f.name]!.type !== f.type).map(
     (f) => `${f.name}: bundled ${f.type}, live ${dict[f.name]!.type}`,
@@ -146,7 +150,9 @@ async function main(): Promise<void> {
   const dictionaryReport = {
     liveFieldCount: liveNames.length,
     bundledFieldCount: staticNames.length,
-    newInLive: diff(liveNames, staticNames).map((n) => `${n} (${dict[n]?.type ?? "?"}): ${dict[n]?.definition ?? ""}`),
+    bundledUndocumented: undocumentedBundled,
+    undocumentedNowLive: undocumentedBundled.filter((n) => n in dict),
+    newInLive: diff(liveNames, allBundledNames).map((n) => `${n} (${dict[n]?.type ?? "?"}): ${dict[n]?.definition ?? ""}`),
     missingFromLive: diff(staticNames, liveNames),
     typeMismatches,
     benchmarkMetrics: {
@@ -344,7 +350,13 @@ async function main(): Promise<void> {
   const md = [
     `# SearchLight API probe, ${report.probedAt.slice(0, 10)}`,
     `${report.requests} request(s), ${report.elapsedMs} ms. User ${report.user}; probed organization \`${org.organization}\`${viaOrg ? `, account \`${viaOrg}\`` : ""}.`,
-    `## Field dictionary\n\nLive ${dictionaryReport.liveFieldCount} fields, bundled ${dictionaryReport.bundledFieldCount}.`,
+    `## Field dictionary\n\nLive ${dictionaryReport.liveFieldCount} fields, bundled ${dictionaryReport.bundledFieldCount}${
+      undocumentedBundled.length
+        ? ` plus ${undocumentedBundled.length} bundled as undocumented (${undocumentedBundled.join(", ")}), left out of this diff${
+            dictionaryReport.undocumentedNowLive.length ? `; now in the live dictionary: ${dictionaryReport.undocumentedNowLive.join(", ")}` : ""
+          }`
+        : ""
+    }.`,
     `### In the live dictionary, not bundled\n\n${list(dictionaryReport.newInLive)}`,
     `### Bundled, not in the live dictionary\n\n${list(dictionaryReport.missingFromLive)}`,
     `### Type mismatches\n\n${list(typeMismatches)}`,

@@ -113,6 +113,7 @@ export function registerEventsTools(server: McpServer, ctx: AppContext): void {
       const stats = await fetchEventsChunked(ctx.client, query, async (chunk) => {
         rows.push(...chunk);
       });
+      notes.push(...(stats.notes ?? []));
       const limited = limitRows(rows, args.max_rows);
       const apiCalls = ctx.client.requestCount - before;
       if (limited.truncated) {
@@ -204,7 +205,8 @@ export function registerEventsTools(server: McpServer, ctx: AppContext): void {
       });
       const apiCalls = ctx.client.requestCount - before;
       const elapsedMs = Date.now() - started;
-      if (stats.splits > 0) {
+      notes.push(...(stats.notes ?? []));
+      if (stats.splits > 0 || stats.notes) {
         notes.push("Rows are written in the order chunks completed; sort by start or account in your spreadsheet if needed.");
       }
       const structured = {

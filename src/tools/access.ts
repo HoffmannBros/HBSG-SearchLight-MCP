@@ -2,7 +2,16 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AccessInfo, EndpointInfo, OrganizationInfo } from "../client.js";
 import type { AppContext } from "../context.js";
-import { BENCHMARK_DIMENSIONS, BENCHMARK_METRICS, METRIC_GUIDE, STATIC_FIELDS, staticField, type FieldInfo } from "../fields.js";
+import {
+  BENCHMARK_DIMENSIONS,
+  BENCHMARK_METRICS,
+  EXAMPLE_VALUES_NOTE,
+  METRIC_GUIDE,
+  STATIC_FIELDS,
+  UNDOCUMENTED_NOTE,
+  staticField,
+  type FieldInfo,
+} from "../fields.js";
 import { describeError, markdownTable, textResult } from "../format.js";
 import { READ_ONLY, guarded } from "./common.js";
 
@@ -16,14 +25,21 @@ export interface CatalogField {
   group?: string | undefined;
   values?: string[] | undefined;
   leadGrading?: boolean | undefined;
+  /** Queryable on events but absent from the live dictionary. */
+  undocumented?: boolean | undefined;
+  /** `values` is a list of examples, not every value the data returns. */
+  valuesAreExamples?: boolean | undefined;
   endpoints: string[];
 }
 
-function endpointsFor(name: string, type: string, endpoints: EndpointInfo[] | undefined): string[] {
+function endpointsFor(name: string, type: string, endpoints: EndpointInfo[] | undefined, undocumented: boolean): string[] {
   if (endpoints && endpoints.length > 0) {
-    return endpoints
+    const listed = endpoints
       .filter((e) => (e.metrics ?? []).includes(name) || (e.dimensions ?? []).includes(name))
       .map((e) => e.endpoint);
+    // The API lists only dictionary fields; an undocumented one still answers on events.
+    if (undocumented && !listed.includes("events")) listed.unshift("events");
+    return listed;
   }
   if (staticField(name)?.dictionaryOnly) return [];
   const out = ["events"];
@@ -42,6 +58,8 @@ export function buildCatalog(access: AccessInfo | undefined): CatalogField[] {
     const live = dictionary[name];
     const stat: FieldInfo | undefined = staticField(name);
     const type = live?.type ?? stat?.type ?? "unknown";
+    // Once the dictionary carries the name, it is documented.
+    const undocumented = Boolean(stat?.undocumented) && !live;
     fields.push({
       name,
       type,
@@ -52,7 +70,9 @@ export function buildCatalog(access: AccessInfo | undefined): CatalogField[] {
       group: stat?.group,
       values: stat?.values,
       leadGrading: stat?.leadGrading,
-      endpoints: endpointsFor(name, type, access?.endpoints),
+      undocumented: undocumented || undefined,
+      valuesAreExamples: (stat?.values && stat.valuesAreExamples) || undefined,
+      endpoints: endpointsFor(name, type, access?.endpoints, undocumented),
     });
   }
   fields.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type.localeCompare(b.type)));
@@ -140,10 +160,10 @@ export function registerAccessTools(server: McpServer, ctx: AppContext): void {
       const rows = fields.map((f) => ({
         name: f.name,
         type: f.type,
-        definition: f.definition,
+        definition: f.undocumented ? `${f.definition} (${UNDOCUMENTED_NOTE})` : f.definition,
         format: f.format ?? "",
-        endpoints: f.endpoints.join("/") || "none (not queryable yet)",
-        values: f.values ? f.values.join(" | ") : "",
+        endpoints: f.endpoints.map((e) => (f.undocumented && e === "events" ? "events (undocumented)" : e)).join("/") || "none (not queryable yet)",
+        values: f.values ? `${f.values.join(" | ")}${f.valuesAreExamples ? ` (${EXAMPLE_VALUES_NOTE})` : ""}` : "",
       }));
       const guide = Object.fromEntries(fields.filter((f) => METRIC_GUIDE[f.name]).map((f) => [f.name, METRIC_GUIDE[f.name]!]));
       const caveats = Object.entries(guide).map(([name, text]) => `- ${name}: ${text}`);

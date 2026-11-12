@@ -1,6 +1,7 @@
 import { setTimeout as sleepFor } from "node:timers/promises";
 import { DateError, eventsParamsViolation, isEventsPath } from "./dates.js";
 import { staticField } from "./fields.js";
+import { filterParamsViolation } from "./filters.js";
 
 export interface DictionaryEntry {
   displayName?: string;
@@ -44,6 +45,13 @@ export interface AccessInfo {
 
 export type QueryParams = Record<string, string | number | boolean | undefined>;
 
+/**
+ * Error codes for a request that is too big as asked but would work smaller.
+ * too-many-combinations (accounts x interval buckets over 1,000) was seen live
+ * on 2026-11-11; the insights codes come from SearchLight's knowledge base.
+ */
+export const SIZE_LIMIT_CODES: ReadonlySet<string> = new Set(["too-many-combinations", "response-too-large", "too-many-documents"]);
+
 export class SearchLightApiError extends Error {
   override name = "SearchLightApiError";
   constructor(
@@ -61,6 +69,7 @@ export class SearchLightApiError extends Error {
   isSizeLimit(): boolean {
     if (this.status === 504) return true;
     if (this.status !== 400) return false;
+    if (this.code !== undefined && SIZE_LIMIT_CODES.has(this.code)) return true;
     if (this.isAttributionWindow()) return false;
     return /too many|too much|reduce|narrow|rows|documents|limit/i.test(this.apiMessage);
   }
@@ -231,6 +240,8 @@ export class SearchLightClient {
     if (violation) throw new DateError(violation);
     const metricless = metriclessFieldsViolation(params.fields);
     if (metricless) throw new PreflightError(metricless);
+    const badFilter = filterParamsViolation(params);
+    if (badFilter) throw badFilter;
   }
 
   /** GET a JSON endpoint with retries, rate-limit handling, and concurrency control. */

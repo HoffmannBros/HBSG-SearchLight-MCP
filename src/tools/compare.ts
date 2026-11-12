@@ -19,6 +19,7 @@ import { DateError, MAX_INTERVAL_DAYS, daysInclusive, localToday, monthWindow, p
 import { BENCHMARK_DIMENSIONS, BENCHMARK_METRICS, METRIC_GUIDE, SPEND_BASED } from "../fields.js";
 import { filtersToParams, type Filters } from "../filters.js";
 import { inferColumns, limitRows, markdownTable, textResult } from "../format.js";
+import { addPercentagePoints, columnsWithPoints, crossPeriodNote, percentagePointsNote, periodLengthNote } from "../guards.js";
 import { benchmarkFiltersArg, benchmarkParams, monthArg } from "./benchmarks.js";
 import {
   READ_ONLY,
@@ -215,7 +216,7 @@ export function registerCompareTools(server: McpServer, ctx: AppContext): void {
     {
       title: "Compare two SearchLight periods",
       description:
-        "Run the same events query over two date ranges and join the rows on their dimension values, with each metric's current value, previous value, change, and percent change (m, m_prev, m_change, m_pct). The comparison range defaults to the same number of days immediately before start. Rates are decimals, so a bookRate change of 0.05 is 5 points; m_pct is relative change. A row present in only one period has nulls on the other side. Each range is limited to 90 days. Costs at least 2 API calls.",
+        "Run the same events query over two date ranges and join the rows on their dimension values, with each metric's current value, previous value, change, and percent change (m, m_prev, m_change, m_pct). The comparison range defaults to the same number of days immediately before start. Rates are decimals; for rate metrics m_points is the change in percentage points (a bookRate change of 0.05 is 5 points) and m_pct is the relative change. A row present in only one period has nulls on the other side. Each range is limited to 90 days. Costs at least 2 API calls.",
       inputSchema: {
         organization: organizationArg,
         subset: subsetArg,
@@ -275,6 +276,7 @@ export function registerCompareTools(server: McpServer, ctx: AppContext): void {
       ]);
 
       let joined = joinPeriods(curRows, prevRows, dimensions, metrics);
+      const rates = addPercentagePoints(joined, metrics);
       if (args.sort_by) joined = sortByChange(joined, args.sort_by);
       const limited = limitRows(joined, args.max_rows);
       const notes = [...scope.notes];
@@ -283,13 +285,20 @@ export function registerCompareTools(server: McpServer, ctx: AppContext): void {
       if (onlyCurrent || onlyPrevious) {
         notes.push(`${onlyCurrent} row(s) appear only in the current period and ${onlyPrevious} only in the comparison period.`);
       }
+      for (const note of [
+        periodLengthNote(daysInclusive(current.start, current.end), daysInclusive(previous.start, previous.end)),
+        crossPeriodNote(metrics),
+        percentagePointsNote(rates),
+      ]) {
+        if (note) notes.push(note);
+      }
       if (limited.truncated) notes.push(`Showing ${limited.rows.length} of ${limited.total} rows.`);
       const apiCalls = ctx.client.requestCount - before;
       const splits = curStats.splits + prevStats.splits;
       const text = [
         `${limited.total} row(s) for ${scope.organization}: ${current.start} to ${current.end} vs ${previous.start} to ${previous.end}. ${apiCalls} API call(s)${splits ? `, ${splits} split(s)` : ""}, ${Date.now() - started} ms.`,
         ...notes,
-        markdownTable(limited.rows, inferColumns(limited.rows, joinedColumns(dimensions, metrics))),
+        markdownTable(limited.rows, inferColumns(limited.rows, columnsWithPoints(joinedColumns(dimensions, metrics), rates))),
       ].join("\n\n");
       return textResult(text, {
         organization: scope.organization,

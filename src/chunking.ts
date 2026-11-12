@@ -192,10 +192,14 @@ export function planEventsTasks(q: EventsQuery, accountList: string[] | undefine
   );
 }
 
-/** The organization's accounts from `/api` (cached), or undefined when it cannot be read. */
-async function organizationAccounts(client: SearchLightClient, organization: string): Promise<string[] | undefined> {
+/**
+ * The accounts a request covers, from `/api` (cached): the subset's accounts
+ * when a subset is set, every reachable account for `-`, otherwise the
+ * organization's. Undefined when `/api` cannot be read.
+ */
+async function organizationAccounts(client: SearchLightClient, organization: string, subset?: string | undefined): Promise<string[] | undefined> {
   try {
-    return await client.listAccounts(organization);
+    return await client.listAccounts(organization, subset);
   } catch {
     return undefined;
   }
@@ -214,7 +218,7 @@ export async function fetchEventsChunked(
   const path = `/api/${encodeURIComponent(q.organization)}/events`;
   // With interval=total there is one bucket per account, so only an explicit
   // list of over 1,000 accounts could trip the limit; skip the lookup.
-  const accountList = q.accounts ?? (q.interval === "total" ? undefined : await organizationAccounts(client, q.organization));
+  const accountList = q.accounts ?? (q.interval === "total" ? undefined : await organizationAccounts(client, q.organization, q.subset));
   const plan = planEventsTasks(q, accountList);
   const opts: AdaptiveOptions<Row[]> = {
     run: (task) => client.get<Row[]>(path, eventsParams(q, task)),

@@ -9,6 +9,7 @@ import { SearchLightApiError, SearchLightClient, SearchLightConfigError, type Ac
 import { loadConfig } from "../src/config.js";
 import type { AppContext } from "../src/context.js";
 import { RESERVED_PARAMS } from "../src/filters.js";
+import { fetchEventsChunked } from "../src/chunking.js";
 import { assertSubsetAllowed, checkScope, rawPathProblem } from "../src/scope.js";
 import { registerAccessTools } from "../src/tools/access.js";
 import { registerBenchmarkTools } from "../src/tools/benchmarks.js";
@@ -464,5 +465,74 @@ describe("searchlight_list_access", () => {
     );
     expect(structured.organizations).toEqual(NO_SUBSETS.organizations);
     expect(text).not.toMatch(/subset/);
+  });
+});
+
+describe("pre-split by account x interval combinations", () => {
+  function direct(access: AccessInfo) {
+    const urls: URL[] = [];
+    const fetchImpl = (async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      urls.push(url);
+      const body = url.pathname === "/api" ? access : [{ leads: 1 }];
+      return new Response(JSON.stringify(body), { status: 200 });
+    }) as typeof fetch;
+    const c = new SearchLightClient({ apiKey: "sl_test", baseUrl: "https://example.test", concurrency: 8, timeoutMs: 5000, fetchImpl, sleep: async () => {} });
+    const events = () => urls.filter((u) => u.pathname !== "/api");
+    return { c, events };
+  }
+  const noop = async () => {};
+
+  it("counts the subset's accounts, not the organization's", async () => {
+    // 2 subset accounts x 400 days = 800 (one request); the 3-account organization would be 1,200.
+    const { c, events } = direct(WITH_SUBSETS);
+    const stats = await fetchEventsChunked(c, { organization: "hb", subset: "hb-east", fields: ["leads"], start: "2024-01-01", end: "2025-02-03", interval: "day" }, noop);
+    expect(stats.notes).toBeUndefined();
+    expect(events().map(params)).toEqual([{ fields: "leads", start: "2024-01-01", end: "2025-02-03", interval: "day", subset: "hb-east" }]);
+  });
+
+  it("splits by date on the subset's count and sends subset on every request", async () => {
+    // 2 subset accounts x 600 days = 1,200.
+    const { c, events } = direct(WITH_SUBSETS);
+    const stats = await fetchEventsChunked(c, { organization: "hb", subset: "hb-east", fields: ["leads"], start: "2024-01-01", end: "2025-08-22", interval: "day" }, noop);
+    expect(stats.notes?.[0]).toMatch(/1,200 account x interval combinations \(2 account\(s\) x 600 days\).*2 requests split by date/);
+    expect(events()).toHaveLength(2);
+    for (const u of events()) {
+      expect(u.pathname).toBe("/api/hb/events");
+      expect(u.searchParams.get("subset")).toBe("hb-east");
+      expect(u.searchParams.get("account")).toBeNull();
+    }
+  });
+
+  it("splits by account using only the subset's accounts", async () => {
+    // A made-up subset of 1,001 accounts inside a 1,002-account organization: one month is already over 1,000.
+    const members = Array.from({ length: 1001 }, (_, i) => `big-${i}`);
+    const access: AccessInfo = {
+      ...WITH_SUBSETS,
+      organizations: [{ organization: "big", accounts: [...members, "big-outside"], subsets: [{ subset: "big-most", accounts: members }] }],
+    };
+    const { c, events } = direct(access);
+    const stats = await fetchEventsChunked(
+      c,
+      { organization: "big", subset: "big-most", fields: ["accountKey", "leads"], start: "2026-01-01", end: "2026-02-28", interval: "month" },
+      noop,
+    );
+    expect(stats.notes?.[0]).toMatch(/1001 account\(s\) x 2 months.*1001 requests split by account/);
+    const sent = events();
+    expect(sent).toHaveLength(1001);
+    expect(sent.every((u) => u.searchParams.get("subset") === "big-most")).toBe(true);
+    expect(new Set(sent.map((u) => u.searchParams.get("account")))).toEqual(new Set(members));
+  });
+
+  it("counts every reachable account for -", async () => {
+    // 6 reachable accounts x 200 days = 1,200; assuming one account would be 200 and send one request.
+    const { c, events } = direct(WITH_SUBSETS);
+    const stats = await fetchEventsChunked(c, { organization: "-", fields: ["leads"], start: "2024-01-01", end: "2024-07-18", interval: "day" }, noop);
+    expect(stats.notes?.[0]).toMatch(/1,200 account x interval combinations \(6 account\(s\) x 200 days\).*2 requests split by date/);
+    expect(events()).toHaveLength(2);
+    for (const u of events()) {
+      expect(u.pathname).toBe("/api/-/events");
+      expect(u.searchParams.get("subset")).toBeNull();
+    }
   });
 });

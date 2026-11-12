@@ -9,6 +9,14 @@ export type Interval = (typeof INTERVALS)[number];
 /** The attribution window; a single interval may not exceed this many days. */
 export const MAX_INTERVAL_DAYS = 90;
 
+/**
+ * An events call may cover at most this many account x interval-bucket
+ * combinations; past it the API answers 400 too-many-combinations. Confirmed
+ * live 2026-11-11: 4 accounts x 250 days is accepted, x 251 days is refused,
+ * and with no account parameter every account in the organization counts.
+ */
+export const MAX_COMBINATIONS = 1000;
+
 export interface DateWindow {
   start: string;
   end: string;
@@ -171,7 +179,47 @@ export function eventsParamsViolation(params: { start?: unknown; end?: unknown; 
   if (!present(params.start) || !present(params.end)) {
     return "The events endpoint needs both start and end (YYYY-MM-DD). Not sent, so it cost no API call.";
   }
-  return eventsRangeViolation(params);
+  return eventsRangeViolation(params) ?? combinationsViolation(params);
+}
+
+/** Plural label for an interval's buckets, e.g. "days". */
+export function bucketLabel(interval: Interval, n: number): string {
+  if (interval === "total") return n === 1 ? "total" : "totals";
+  return n === 1 ? interval : `${interval}s`;
+}
+
+/** The refusal for a call over MAX_COMBINATIONS that cannot be split. */
+export function combinationsMessage(accounts: number, buckets: number, interval: Interval, why = ""): string {
+  const n = accounts * buckets;
+  return `This request covers ${n.toLocaleString("en-US")} account x interval combinations (${accounts} account(s) x ${buckets} ${bucketLabel(interval, buckets)}), over SearchLight's limit of ${MAX_COMBINATIONS.toLocaleString("en-US")} per call${why}. Use fewer accounts, a coarser interval, or a shorter range. Not sent, so it cost no API call.`;
+}
+
+/**
+ * A single events call whose account list is explicit (account= or
+ * accounts=) and whose accounts x interval buckets exceed MAX_COMBINATIONS.
+ * Without an explicit list the count depends on the organization, so the
+ * typed tools pre-split instead (`fetchEventsChunked`).
+ */
+export function combinationsViolation(params: { start?: unknown; end?: unknown; interval?: unknown; account?: unknown; accounts?: unknown }): string | null {
+  let accounts: number;
+  if (typeof params.accounts === "string" && params.accounts.trim() !== "") {
+    accounts = new Set(params.accounts.split(",").map((a) => a.trim()).filter(Boolean)).size;
+  } else if (params.account !== undefined && params.account !== null && String(params.account).trim() !== "") {
+    accounts = 1;
+  } else {
+    return null;
+  }
+  if (typeof params.start !== "string" || typeof params.end !== "string") return null;
+  const interval = (params.interval === undefined || params.interval === null ? "total" : String(params.interval)) as Interval;
+  if (!(INTERVALS as readonly string[]).includes(interval)) return null;
+  let buckets: number;
+  try {
+    buckets = intervalBoundaries(params.start, params.end, interval).length;
+  } catch {
+    return null;
+  }
+  if (accounts * buckets <= MAX_COMBINATIONS) return null;
+  return combinationsMessage(accounts, buckets, interval);
 }
 
 /** Today's calendar date in the machine's local time zone, YYYY-MM-DD. */

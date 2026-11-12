@@ -129,7 +129,9 @@ describe("fetchEventsChunked", () => {
     );
     expect(stats).toEqual({ chunks: 2, splits: 1 });
     expect(rows.reduce((s, r) => s + (r.spend as number), 0)).toBe(181);
-    expect(seen.filter((s) => s === "")).toHaveLength(0);
+    // One /api lookup to count accounts for the 1,000-combination check (the
+    // typed tools have it cached already from resolveScope); none for splitting.
+    expect(seen.filter((s) => s === "")).toHaveLength(1);
   });
 
   it("rethrows when a single-interval, single-account request is still rejected", async () => {

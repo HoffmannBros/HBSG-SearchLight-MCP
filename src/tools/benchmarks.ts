@@ -20,6 +20,7 @@ import {
   outputDirArg,
   pickAccounts,
   resolveOutputDir,
+  subsetArg,
   withExtension,
 } from "./common.js";
 
@@ -41,7 +42,12 @@ export const benchmarkFiltersArg = z
   .optional()
   .describe(`Filters on the benchmark dimensions only (${BENCHMARK_DIMENSIONS.join(", ")}), e.g. {"normalizedBusinessUnit":"HVAC"}.`);
 
-export function benchmarkParams(fields: string[], filters: Record<string, unknown> | undefined, accounts: string[] | undefined) {
+export function benchmarkParams(
+  fields: string[],
+  filters: Record<string, unknown> | undefined,
+  accounts: string[] | undefined,
+  subset?: string | undefined,
+) {
   const allowed: readonly string[] = BENCHMARK_DIMENSIONS;
   for (const key of Object.keys(filters ?? {})) {
     if (!allowed.includes(key)) {
@@ -53,6 +59,7 @@ export function benchmarkParams(fields: string[], filters: Record<string, unknow
     fields: fields.join(","),
     account: accounts && accounts.length === 1 ? accounts[0] : undefined,
     accounts: accounts && accounts.length > 1 ? accounts.join(",") : undefined,
+    subset,
   };
 }
 
@@ -67,6 +74,7 @@ export function registerBenchmarkTools(server: McpServer, ctx: AppContext): void
         "Anonymized industry benchmarks for one calendar month: the industry figure for each metric plus the p10/p25/p50/p75/p90 distribution across the cohort. Compare your own numbers from searchlight_query_events against these. One month per call; use searchlight_export_benchmarks_csv for several months.",
       inputSchema: {
         organization: organizationArg,
+        subset: subsetArg,
         fields: benchmarkFieldsArg,
         month: monthArg,
         account: accountArg,
@@ -75,15 +83,16 @@ export function registerBenchmarkTools(server: McpServer, ctx: AppContext): void
       },
       annotations: READ_ONLY,
     },
-    guarded(async ({ organization, fields, month, account, accounts, filters }) => {
-      const scope = await resolveScope(ctx, organization, pickAccounts(account, accounts));
+    guarded(async ({ organization, subset, fields, month, account, accounts, filters }) => {
+      const scope = await resolveScope(ctx, organization, pickAccounts(account, accounts), subset);
       const org = scope.organization;
-      const params = benchmarkParams(fields, filters, scope.accounts);
+      const params = benchmarkParams(fields, filters, scope.accounts, scope.subset);
       const rows = await ctx.client.get<Row[]>(`/api/${encodeURIComponent(org)}/benchmarks`, { ...params, month });
       const columns = inferColumns(rows, ["series", "cohortAccounts", ...fields]);
-      const text = [`${rows.length} row(s) for ${org}, month=${month}.`, ...scope.notes, markdownTable(rows, columns)].join("\n\n");
+      const text = [`${rows.length} row(s) for ${org}${scope.subset ? ` (subset ${scope.subset})` : ""}, month=${month}.`, ...scope.notes, markdownTable(rows, columns)].join("\n\n");
       return textResult(text, {
         organization: org,
+        subset: scope.subset,
         month,
         rowCount: rows.length,
         rows,
@@ -100,6 +109,7 @@ export function registerBenchmarkTools(server: McpServer, ctx: AppContext): void
         "Fetch benchmarks for several months (a list, or a start_month..end_month range) and write one CSV with a month column. Months whose benchmark data is still being gathered are skipped and reported.",
       inputSchema: {
         organization: organizationArg,
+        subset: subsetArg,
         fields: benchmarkFieldsArg,
         months: z.array(monthArg).optional().describe("Explicit months, e.g. [\"2026-04\",\"2026-05\",\"previous-mtd\"]."),
         start_month: z.string().regex(MONTH).optional().describe("First month of a range, YYYY-MM. Use with end_month."),
@@ -136,9 +146,9 @@ export function registerBenchmarkTools(server: McpServer, ctx: AppContext): void
       }
       const unique = [...new Set(months)];
       if (unique.length === 0) throw new DateError("Give months, or start_month and end_month.");
-      const scope = await resolveScope(ctx, args.organization, pickAccounts(args.account, args.accounts));
+      const scope = await resolveScope(ctx, args.organization, pickAccounts(args.account, args.accounts), args.subset);
       const org = scope.organization;
-      const params = benchmarkParams(args.fields, args.filters, scope.accounts);
+      const params = benchmarkParams(args.fields, args.filters, scope.accounts, scope.subset);
       const path = `/api/${encodeURIComponent(org)}/benchmarks`;
       const skipped: Array<{ month: string; reason: string }> = [];
       const results = await Promise.all(

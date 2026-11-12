@@ -62,19 +62,20 @@ export async function adaptiveFetch<T>(task: ChunkTask, opts: AdaptiveOptions<T>
 
 /**
  * Splitting strategy shared by events and insights: first fan out by
- * account, then halve the date window at an interval boundary.
+ * account, then halve the date window at an interval boundary. With a
+ * subset, "all accounts" means the subset's accounts.
  */
 export function makeSplitter(
   client: SearchLightClient,
   organization: string,
   interval: Interval,
-  opts: { allowAccountSplit: boolean },
+  opts: { allowAccountSplit: boolean; subset?: string | undefined },
 ): (task: ChunkTask) => Promise<ChunkTask[] | null> {
   return async (task) => {
     let accounts = task.accounts;
     if (opts.allowAccountSplit) {
       if (accounts === undefined) {
-        const all = await client.listAccounts(organization);
+        const all = await client.listAccounts(organization, opts.subset);
         if (all.length > 1) {
           return all.map((a) => ({ accounts: [a], window: task.window }));
         }
@@ -105,6 +106,8 @@ export interface EventsQuery {
   end: string;
   interval: Interval;
   accounts?: string[] | undefined;
+  /** Subset of the organization, sent as `subset=` on every chunk. */
+  subset?: string | undefined;
   /** Extra query parameters: filters and the cross-field `filter`. */
   extraParams?: Record<string, string> | undefined;
 }
@@ -119,6 +122,7 @@ export function eventsParams(q: EventsQuery, task: ChunkTask): Record<string, st
     interval: q.interval === "total" ? undefined : q.interval,
     account: accounts && accounts.length === 1 ? accounts[0] : undefined,
     accounts: accounts && accounts.length > 1 ? accounts.join(",") : undefined,
+    subset: q.subset,
   };
 }
 
@@ -188,10 +192,14 @@ export function planEventsTasks(q: EventsQuery, accountList: string[] | undefine
   );
 }
 
-/** The organization's accounts from `/api` (cached), or undefined when it cannot be read. */
-async function organizationAccounts(client: SearchLightClient, organization: string): Promise<string[] | undefined> {
+/**
+ * The accounts a request covers, from `/api` (cached): the subset's accounts
+ * when a subset is set, every reachable account for `-`, otherwise the
+ * organization's. Undefined when `/api` cannot be read.
+ */
+async function organizationAccounts(client: SearchLightClient, organization: string, subset?: string | undefined): Promise<string[] | undefined> {
   try {
-    return await client.listAccounts(organization);
+    return await client.listAccounts(organization, subset);
   } catch {
     return undefined;
   }
@@ -210,12 +218,12 @@ export async function fetchEventsChunked(
   const path = `/api/${encodeURIComponent(q.organization)}/events`;
   // With interval=total there is one bucket per account, so only an explicit
   // list of over 1,000 accounts could trip the limit; skip the lookup.
-  const accountList = q.accounts ?? (q.interval === "total" ? undefined : await organizationAccounts(client, q.organization));
+  const accountList = q.accounts ?? (q.interval === "total" ? undefined : await organizationAccounts(client, q.organization, q.subset));
   const plan = planEventsTasks(q, accountList);
   const opts: AdaptiveOptions<Row[]> = {
     run: (task) => client.get<Row[]>(path, eventsParams(q, task)),
     emit: onRows,
-    split: makeSplitter(client, q.organization, q.interval, { allowAccountSplit: canSplitByAccount(q.fields) }),
+    split: makeSplitter(client, q.organization, q.interval, { allowAccountSplit: canSplitByAccount(q.fields), subset: q.subset }),
   };
   const results = await Promise.all(plan.tasks.map((task) => adaptiveFetch<Row[]>(task, opts)));
   const stats: ChunkStats = {
@@ -229,6 +237,8 @@ export async function fetchEventsChunked(
 export interface InsightsQuery {
   organization: string;
   accounts?: string[] | undefined;
+  /** Subset of the organization, sent as `subset=` on every chunk. */
+  subset?: string | undefined;
   start?: string | undefined;
   end?: string | undefined;
   fields?: string[] | undefined;
@@ -242,7 +252,7 @@ export async function fetchInsightsChunked<T = Row>(
 ): Promise<ChunkStats> {
   const path = `/api/${encodeURIComponent(q.organization)}/insights`;
   const dated = q.start !== undefined && q.end !== undefined;
-  const splitter = makeSplitter(client, q.organization, dated ? "day" : "total", { allowAccountSplit: true });
+  const splitter = makeSplitter(client, q.organization, dated ? "day" : "total", { allowAccountSplit: true, subset: q.subset });
   return adaptiveFetch<T[]>(
     { accounts: q.accounts, window: { start: q.start ?? "", end: q.end ?? "" } },
     {
@@ -254,6 +264,7 @@ export async function fetchInsightsChunked<T = Row>(
           start: dated ? task.window.start : undefined,
           end: dated ? task.window.end : undefined,
           fields: q.fields && q.fields.length > 0 ? q.fields.join(",") : undefined,
+          subset: q.subset,
         });
       },
       emit: onDocs,

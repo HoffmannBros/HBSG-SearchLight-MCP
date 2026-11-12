@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { AccessInfo, EndpointInfo } from "../client.js";
+import type { AccessInfo, EndpointInfo, OrganizationInfo } from "../client.js";
 import type { AppContext } from "../context.js";
 import {
   BENCHMARK_DIMENSIONS,
@@ -79,16 +79,27 @@ export function buildCatalog(access: AccessInfo | undefined): CatalogField[] {
   return fields;
 }
 
+/** One line per organization, plus one indented line per subset it lists. */
+export function describeOrganization(o: OrganizationInfo): string[] {
+  const lines = [`- ${o.organization}: ${(o.accounts ?? []).length} account(s): ${(o.accounts ?? []).join(", ")}`];
+  for (const s of o.subsets ?? []) {
+    const label = s.name && s.name !== s.subset ? ` "${s.name}"` : "";
+    const accounts = s.accounts ?? [];
+    lines.push(`  - subset ${s.subset}${label}: ${accounts.length} account(s)${accounts.length ? `: ${accounts.join(", ")}` : ""}`);
+  }
+  return lines;
+}
+
 export function registerAccessTools(server: McpServer, ctx: AppContext): void {
   server.registerTool(
     "searchlight_list_access",
     {
       title: "List SearchLight access",
       description:
-        "Show which organizations and account keys this API key can reach, the endpoints available, and optionally the live field dictionary. Call this first when the organization is unknown. Organization keys go in the organization argument of other tools; account keys go in account/accounts.",
+        "Show which organizations, subsets and account keys this API key can reach, the endpoints available, and optionally the live field dictionary. Call this first when the organization is unknown. Organization keys go in the organization argument of other tools (or \"-\" for every account the key reaches); subset keys go in subset; account keys go in account/accounts.",
       inputSchema: {
         include_dictionary: z.boolean().default(false).describe("Also return the full field dictionary (display names, definitions, formats)."),
-        refresh: z.boolean().default(false).describe("Bypass the 10-minute cache."),
+        refresh: z.boolean().default(false).describe("Bypass the 60-minute cache."),
       },
       annotations: READ_ONLY,
     },
@@ -98,7 +109,7 @@ export function registerAccessTools(server: McpServer, ctx: AppContext): void {
       const lines = [
         `Signed in as ${access.user}. ${orgs.length} organization(s).`,
         "",
-        ...orgs.map((o) => `- ${o.organization}: ${(o.accounts ?? []).length} account(s): ${(o.accounts ?? []).join(", ")}`),
+        ...orgs.flatMap(describeOrganization),
         "",
         `Endpoints: ${(access.endpoints ?? []).map((e) => `${e.endpoint} (${e.path})`).join("; ")}`,
         `Dictionary: ${Object.keys(access.dictionary ?? {}).length} fields${include_dictionary ? "" : " (pass include_dictionary=true to list them, or use searchlight_list_fields)"}.`,

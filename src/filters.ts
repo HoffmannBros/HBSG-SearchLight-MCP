@@ -23,6 +23,7 @@ export const RESERVED_PARAMS = new Set([
   "interval",
   "month",
   "filter",
+  "subset",
 ]);
 
 export class FilterError extends Error {

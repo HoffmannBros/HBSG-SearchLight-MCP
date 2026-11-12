@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { fetchEventsChunked, type ChunkStats, type EventsQuery } from "../chunking.js";
 import { classifyFields } from "../compare.js";
@@ -9,14 +10,27 @@ import { DateError, MAX_INTERVAL_DAYS, daysInclusive, type Interval } from "../d
 import { filtersToParams, type Filters } from "../filters.js";
 import { formatBytes, inferColumns, limitRows, markdownTable, textResult } from "../format.js";
 import {
+  MAX_OR_EXPANSION,
   RowGuard,
+  allMetricsZero,
+  equalityParam,
   filterFieldNames,
+  gradingNote,
+  orFallbackNote,
+  orTooManyNote,
+  qualifyingOrFilters,
   reconcileSpend,
   recordGrainNotes,
+  regexOrNotEmptyNote,
+  regexOrNotFilterFields,
   spendReconciliationFields,
   spendReconciliationNote,
   summingNote,
   unattributedSpendRows,
+  zeroTotalCheckApplies,
+  zeroTotalConfirmedNote,
+  zeroTotalFailedMessage,
+  type OrFilter,
   type SpendReconciliation,
 } from "../guards.js";
 import {
@@ -62,6 +76,18 @@ const eventsInput = {
     .boolean()
     .default(true)
     .describe("Drop rows where every requested dimension is blank or N/A and every metric is 0. Never drops a row with a non-zero metric. Default true."),
+  retry_or_filters: z
+    .boolean()
+    .default(true)
+    .describe(
+      `When the result is empty and a filters value is ["or", v1, v2, ...] of plain values, re-send once per value with an equality filter and combine the rows (SearchLight sometimes answers an or filter with no rows). Up to ${MAX_OR_EXPANSION} values; the field is added to fields when missing. Default true; false never retries.`,
+    ),
+  check_zero_total: z
+    .boolean()
+    .default(true)
+    .describe(
+      "When interval=total over more than 31 days with no dimensions reads 0 for every metric, send 1 extra request by month to tell a failed total read from a real zero. Default true; false skips it.",
+    ),
 };
 
 interface EventsArgs {
@@ -77,6 +103,8 @@ interface EventsArgs {
   filter?: unknown[] | undefined;
   reconcile_spend: boolean;
   drop_placeholder_rows: boolean;
+  retry_or_filters: boolean;
+  check_zero_total: boolean;
 }
 
 interface Prepared {
@@ -89,6 +117,12 @@ interface Prepared {
   guard: RowGuard;
   /** Fields for the unsplit-spend request, or null when no reconciliation applies. */
   reconcileFields: string[] | null;
+  /** Qualifying `or` filters, in the caller's order; the first is expanded on an empty result. */
+  orFilters: OrFilter[];
+  /** Per-field filters that use regex or not. */
+  regexOrNot: string[];
+  retryOr: boolean;
+  checkZeroTotal: boolean;
 }
 
 async function prepare(ctx: AppContext, args: EventsArgs): Promise<Prepared> {
@@ -132,26 +166,60 @@ async function prepare(ctx: AppContext, args: EventsArgs): Promise<Prepared> {
     filterFields: filterFieldNames(args.filters, args.filter),
   });
   const reconcileFields = args.reconcile_spend ? spendReconciliationFields(dimensions, metrics, interval) : null;
-  return { query, columns, notes, days, dimensions, metrics, guard, reconcileFields };
+  return {
+    query,
+    columns,
+    notes,
+    days,
+    dimensions,
+    metrics,
+    guard,
+    reconcileFields,
+    orFilters: qualifyingOrFilters(args.filters),
+    regexOrNot: regexOrNotFilterFields(args.filters),
+    retryOr: args.retry_or_filters,
+    checkZeroTotal: args.check_zero_total,
+  };
 }
 
 interface Fetched {
   stats: ChunkStats;
   reconciliation: SpendReconciliation | undefined;
+  /** Notes from the automatic repairs (or-filter fallback, zero-total check). */
+  repairNotes: string[];
+  /** Set when a long-range total read 0 but the monthly rows did not. */
+  zeroTotalFailure?: { message: string; monthly: Row[] } | undefined;
+}
+
+function mergeStats(into: ChunkStats, from: ChunkStats): void {
+  into.chunks += from.chunks;
+  into.splits += from.splits;
+  for (const n of from.notes ?? []) {
+    if (!(into.notes ?? []).includes(n)) into.notes = [...(into.notes ?? []), n];
+  }
 }
 
 /**
  * Run the events query through the row guard, and the unsplit-spend request
  * beside it when one applies: same organization, subset, accounts, filters and
  * range, with fields reduced to the account dimensions plus spend. `onRows`
- * gets the rows the guard keeps.
+ * gets the rows the guard keeps. Then the automatic repairs, each of which
+ * sends extra requests and says so in `repairNotes`:
+ * - K2: an empty result with an `or` filter of plain values is re-sent once
+ *   per value with an equality filter (the field added to fields if missing);
+ * - K9: a long-range total with no dimensions that reads all zero is checked
+ *   once by month.
  */
 async function fetchGuarded(ctx: AppContext, p: Prepared, onRows: (rows: Row[]) => Promise<void>): Promise<Fetched> {
   const accountFields = (p.reconcileFields ?? []).filter((f) => f !== "spend");
   const spendRows: Row[] = [];
   const unsplit: Row[] = [];
+  let received = 0;
+  let allZero = true;
   const [stats, recStats] = await Promise.all([
     fetchEventsChunked(ctx.client, p.query, async (chunk) => {
+      received += chunk.length;
+      if (!allMetricsZero(chunk, p.metrics)) allZero = false;
       const kept = p.guard.accept(chunk);
       if (p.reconcileFields) {
         for (const r of kept) spendRows.push({ ...Object.fromEntries(accountFields.map((f) => [f, r[f]])), spend: r.spend });
@@ -165,20 +233,99 @@ async function fetchGuarded(ctx: AppContext, p: Prepared, onRows: (rows: Row[]) 
       : Promise.resolve(undefined),
   ]);
   if (recStats?.notes) stats.notes = [...(stats.notes ?? []), ...recStats.notes];
-  const reconciliation = p.reconcileFields ? reconcileSpend(spendRows, unsplit, accountFields) : undefined;
-  return { stats, reconciliation };
+  let reconciliation = p.reconcileFields ? reconcileSpend(spendRows, unsplit, accountFields) : undefined;
+  const repairNotes: string[] = [];
+
+  // K2: or-filter fallback, only on an empty result.
+  let retried = false;
+  const [filter, ...rest] = p.orFilters;
+  if (received === 0 && filter) {
+    if (!p.retryOr) {
+      repairNotes.push(
+        `No rows, and the ${filter.field} filter is ["or", ...], which SearchLight sometimes answers with an empty result where single values return rows. Not retried because retry_or_filters=false; try one value per call.`,
+      );
+    } else if (filter.values.length > MAX_OR_EXPANSION) {
+      repairNotes.push(orTooManyNote(filter));
+    } else {
+      retried = true;
+      const addedField = !p.query.fields.includes(filter.field);
+      const fields = addedField ? [filter.field, ...p.query.fields] : p.query.fields;
+      if (addedField) p.columns.splice(p.query.interval === "total" ? 0 : 2, 0, filter.field);
+      const rowsPerValue = filter.values.map(() => 0);
+      const results = await Promise.all(
+        filter.values.map((value, i) =>
+          fetchEventsChunked(
+            ctx.client,
+            { ...p.query, fields, extraParams: { ...(p.query.extraParams ?? {}), [filter.field]: equalityParam(value) } },
+            async (chunk) => {
+              rowsPerValue[i] = (rowsPerValue[i] ?? 0) + chunk.length;
+              await onRows(p.guard.accept(chunk));
+            },
+          ),
+        ),
+      );
+      for (const r of results) mergeStats(stats, r);
+      repairNotes.push(orFallbackNote({ filter, addedField, rowsPerValue, otherFields: rest.map((f) => f.field) }));
+      if (reconciliation) {
+        reconciliation = undefined;
+        repairNotes.push("The spend check was not repeated for the per-value retries, so spendReconciliation is left out.");
+      }
+    }
+  } else if (received === 0 && p.regexOrNot.length > 0) {
+    repairNotes.push(regexOrNotEmptyNote(p.regexOrNot));
+  }
+
+  // K9: zero-total cross-check.
+  let zeroTotalFailure: Fetched["zeroTotalFailure"];
+  if (!retried && p.checkZeroTotal && allZero && zeroTotalCheckApplies(p.query.interval, p.dimensions, p.days)) {
+    const monthly: Row[] = [];
+    const monthStats = await fetchEventsChunked(ctx.client, { ...p.query, interval: "month" }, async (chunk) => {
+      monthly.push(...chunk);
+    });
+    mergeStats(stats, { ...monthStats, chunks: 0, splits: 0 });
+    if (allMetricsZero(monthly, p.metrics)) {
+      repairNotes.push(zeroTotalConfirmedNote(p.days));
+    } else {
+      zeroTotalFailure = { message: zeroTotalFailedMessage(p.metrics, p.days, monthly), monthly };
+    }
+  }
+  return { stats, reconciliation, repairNotes, zeroTotalFailure };
 }
 
 /** Notes about the result, in reading order, after the scope and range notes. */
 function resultNotes(p: Prepared, f: Fetched): string[] {
   const summing = summingNote(p.metrics, p.query.interval);
+  const grading = gradingNote(p.metrics);
   return [
     ...(f.stats.notes ?? []),
+    ...(grading ? [grading] : []),
+    ...f.repairNotes,
     ...(summing ? [summing] : []),
     ...recordGrainNotes(p.dimensions, p.metrics),
     ...p.guard.notes(),
     ...(f.reconciliation ? [spendReconciliationNote(f.reconciliation)] : []),
   ];
+}
+
+/** The error result for a failed long-range total: the message, the monthly rows, and every note. */
+function zeroTotalErrorResult(p: Prepared, f: Fetched, apiCalls: number): CallToolResult {
+  const failure = f.zeroTotalFailure!;
+  const notes = [...p.notes, ...resultNotes(p, f)];
+  const table = markdownTable(failure.monthly, inferColumns(failure.monthly, ["start", "end", ...p.query.fields]));
+  return {
+    isError: true,
+    content: [{ type: "text", text: [failure.message, `${apiCalls} API call(s).`, ...notes, table].join("\n\n") }],
+    structuredContent: {
+      error: "zero-total-read-failed",
+      organization: p.query.organization,
+      start: p.query.start,
+      end: p.query.end,
+      interval: p.query.interval,
+      monthlyRows: failure.monthly,
+      apiCalls,
+      notes,
+    },
+  };
 }
 
 const reconciliationSchema = z
@@ -222,6 +369,7 @@ export function registerEventsTools(server: McpServer, ctx: AppContext): void {
       const fetched = await fetchGuarded(ctx, prepared, async (kept) => {
         rows.push(...kept);
       });
+      if (fetched.zeroTotalFailure) return zeroTotalErrorResult(prepared, fetched, ctx.client.requestCount - before);
       const { stats, reconciliation } = fetched;
       notes.push(...resultNotes(prepared, fetched));
       const limited = limitRows(rows, args.max_rows);
@@ -320,6 +468,10 @@ export function registerEventsTools(server: McpServer, ctx: AppContext): void {
       } catch (err) {
         await spool.discard();
         throw err;
+      }
+      if (fetched.zeroTotalFailure) {
+        await spool.discard();
+        return zeroTotalErrorResult(prepared, fetched, ctx.client.requestCount - before);
       }
       const { stats, reconciliation } = fetched;
       const baseName =

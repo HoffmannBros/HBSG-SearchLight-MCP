@@ -2,9 +2,75 @@
 
 Handoff state for HBSG-SearchLight-MCP.
 
-**Last updated:** 2026-11-11 (v1.2.0 planned, not started; probe re-run; Clara compared)
+**Last updated:** 2026-11-11 (v1.2.0 built on `feat/v1.2.0`; not pushed, merged to main, tagged or released)
 
-## Start here: v1.2.0 is planned, no code changed (2026-11-11)
+## Start here: v1.2.0 is built and waiting for Justin's go-ahead (2026-11-11)
+
+All work is on local branch `feat/v1.2.0` (cut from local `main` at `5ea26b0`). Nothing is
+pushed. Waiting on Justin before: pushing, merging to `main`, tagging `v1.2.0`, the GitHub
+release with `dist/hbsg-searchlight-1.2.0.mcpb`.
+
+Final checks on `feat/v1.2.0` (Windows): `npm test` 300/300 in 18 files; `npm run probe` OK
+(no field drift, no unsent parameters); `npm run smoke` OK (all 13 tools, report totals equal
+the unsplit total, unknown subset refused locally); `npm run pack` OK, 300 KB, 13 tools from a
+clean unpack (the pack script's expected tool count was raised from 11 to 13).
+
+Merged, by work item (each in its own worktree under `.claude/worktrees/`, reviewed and
+tested before merge):
+
+- W1-C field reference: `jobType` bundled as undocumented (the other four "undocumented"
+  names are in the live dictionary), classification sets in `src/fields.ts`, metric guide no
+  longer calls `closedRevenue` safe to sum. Follow-up: `adjustedType` removed from
+  `RECORD_GRAIN_DIMENSIONS` after W3-A showed it aggregates on its own.
+- W1-B request guards: list/object filter values refused with the operator form shown; size
+  codes trigger splitting; requests over 1,000 account x interval combinations pre-split by
+  date (or by account when rows carry it) or refused locally.
+- W1-A subsets and `-`: `subset` on every typed tool, scope checks, subset-id reroute, `-` as
+  the organization, per-code 404 hints, `/api` cache 60 minutes. Follow-up: the pre-split
+  counts the subset's accounts.
+- W1-D probe: 16 requests; subsets, `-`, undocumented fields, K1/K2/K4/K10 sections. Its fake
+  server was never committed (lives in a sub-session scratchpad).
+- W2-A result guards (`src/guards.ts`): spend reconciliation (`reconcile_spend`,
+  `add_unattributed_spend_row`), placeholder-row drop, summing, record-grain, empty-bucket,
+  `customerPhone` and zero-spend ROAS notes; `compare_periods` gains `m_points` and notes.
+- W2-B repairs (reduced by decision): grading warning note only, no split; `or`-filter
+  fallback (`retry_or_filters`, cap 12); zero-total cross-check (`check_zero_total`).
+- W3-A: `searchlight_performance_report`, `searchlight_funnel_report`.
+- **W3-B lead-grading tools: not built, by decision.** Hoffmann accounts have no lead-grading
+  data (the fields exist in the API but come back empty), so neither K4 nor the tools could
+  be verified. Revisit when an account returns non-zero `gradedConversions`.
+- Wave 4: INSTRUCTIONS, README, AGENTS.md rules, smoke additions, version 1.2.0.
+
+K-claims on Hoffmann accounts (2026-11-11, counts only):
+
+| Claim | Result |
+|---|---|
+| K1 campaign split drops spend | Reproduced: 2.8% (one account-week), 3.1% (one account-month). A channel-only split matched exactly. |
+| K2 empty `or` filter | Not reproduced on three account-ranges; `or` = sum of single values. Fallback kept (fires only on empty). |
+| K3 list/object filter answers `[]` | Reproduced (plain list, `{"in"}`, `{"$gt"}` all 200 with 0 rows). |
+| K4 grading inflates counts | Untestable: no grading data. `leads` 922 with and without `gradedConversions`. |
+| K5 interval rows do not sum | Consistent: a 60-day total 6,711 leads vs 7,253 summed over its two months. |
+| K6 record grain | `adjustedType` alone is NOT record grain (6 aggregated rows summing to the total). Others not re-tested. |
+| K7 placeholder rows | Not reproduced in five splits. Drop is harmless (all-zero rows only). |
+| K8 empty buckets omitted | Reproduced: 7 of 22 channel values missing some months. |
+| K9 all-zero long total | Not reproduced on a 60-day total. Check fires only on all zeros. |
+| K10 1,000 combinations | Reproduced; cap is exactly 1,000; month and week bucket counts match ours. |
+| K13 to K16 | Not testable (no grading data); `customerPhone` filter not tested. |
+
+Also found live: an unknown field name is silently dropped (200, as if never requested); an
+unknown subset answers 404 `inaccessible-organization`; `-` works on events, benchmarks and
+insights, and the API ignores `subset` with `-`.
+
+Open follow-ups (not done):
+
+- `google-member-cost` skill: take spend from an unsplit total (or the new performance
+  report) instead of summing a campaign split. Its `or` filter on channel worked in our checks.
+- `../HBSG_SearchLight_Conversions` has its own thin client: check it for K1 (campaign spend).
+- `compare_*` tools call `getAccess().catch(...)`, which sends `/api` twice when it fails.
+- `buildCatalog` ignores the live dictionary's `values` lists.
+- Preflight could warn on field names in neither the live dictionary nor the bundled list.
+
+## v1.2.0 planning notes (2026-11-11, before the build)
 
 The plan is `docs/plans/2026-11-11-v1.2.0-clara-parity.md`. It is written to be run by one
 parent session that starts a sub-session per work item (four waves). Nothing in it has been
@@ -257,9 +323,10 @@ Packaging: the pack guard caught `searchlight_customer_attribution_detail_export
 
 ## Next actions, in order
 
--1. **Run the v1.2.0 plan** (`docs/plans/2026-11-11-v1.2.0-clara-parity.md`) in a new parent
-   session. The plan file and this note are committed on local `main` (2026-11-11, not
-   pushed), so worktrees cut from `feat/v1.2.0` will contain the plan.
+-1. **Release v1.2.0 once Justin says go:** merge `feat/v1.2.0` to `main`, push, tag
+   `v1.2.0`, GitHub Release with `dist/hbsg-searchlight-1.2.0.mcpb` (re-pack first), then
+   install it in Claude Desktop and try a performance report. Then the follow-ups listed
+   under "Start here".
 
 0. v1.1.0 is done: Justin installed the 1.1.0 .mcpb in Claude Desktop on 2026-09-28 and both
    compare questions ("How did each account do against the industry last month?", "Compare
